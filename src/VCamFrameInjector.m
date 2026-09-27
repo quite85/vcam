@@ -86,15 +86,59 @@ static os_unfair_lock gStateLock = OS_UNFAIR_LOCK_INIT;
 // captureOutput:didDropSampleBuffer:fromConnection:、以及它自己的私有方法）。
 // 我们只覆盖出帧那一个，其余全部转发给真实 delegate。
 //
+// ---------------------------------------------------------------------------
+// 协议方法白名单判断
+//
+// 真实 delegate 可能实现了很多其他方法（比如
+// captureOutput:didDropSampleBuffer:fromConnection:、以及它自己的私有方法）。
+// 我们只覆盖出帧那一个，其余按协议转发给真实 delegate。
+//
+// ⚠️ 这里刻意**只转发 AVCaptureVideoDataOutputSampleBufferDelegate
+//    协议里声明的方法**，不做无条件转发。
+//    无条件转发会把 AVFoundation 内部调用的私有方法也转发走 ——
+//    如果真实 delegate 只是碰巧 respondsToSelector 返回 YES
+//    而实际语义并不匹配，就可能出问题。
+//    白名单式转发把影响面限制在协议范围内，安全得多。
+// ---------------------------------------------------------------------------
+static BOOL VCamIsCaptureProtocolSelector(SEL sel) {
+    static Protocol *proto = NULL;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        proto = @protocol(AVCaptureVideoDataOutputSampleBufferDelegate);
+    });
+    if (!proto || !sel) return NO;
+
+    // 出帧与丢帧是协议里会被 AVFoundation 主动调用的两个方法
+    if (sel == @selector(captureOutput:didOutputSampleBuffer:fromConnection:)) return YES;
+    if (sel == @selector(captureOutput:didDropSampleBuffer:fromConnection:)) return YES;
+
+    // 其余按协议声明判断
+    struct objc_method_description d =
+        protocol_getMethodDescription(proto, sel, NO, YES);   // required, instance
+    if (d.name) return YES;
+    d = protocol_getMethodDescription(proto, sel, YES, YES);  // optional, instance
+    return d.name != NULL;
+}
+
 - (BOOL)respondsToSelector:(SEL)aSelector {
     if ([super respondsToSelector:aSelector]) return YES;
+    if (!VCamIsCaptureProtocolSelector(aSelector)) return NO;
     id real = self.realDelegate;
     return real ? [real respondsToSelector:aSelector] : NO;
 }
 
 - (id)forwardingTargetForSelector:(SEL)aSelector {
-    id real = self.realDelegate;
-    if (real && [real respondsToSelector:aSelector]) return real;
+    // 只转发协议范围内的方法，不做无条件转发。
+    //
+    // ⚠️ 曾经是无条件转发（任何 selector 都往真实 delegate 丢）。
+    //    那看起来更"透明"，但会把 AVFoundation 内部对 delegate 的
+    //    私有方法调用也一并转发走 —— 如果真实 delegate 只是碰巧
+    //    respondsToSelector 返回 YES、实际语义并不是那样，就会出错。
+    //    白名单式转发把影响面限制在协议声明范围内。
+    if (VCamIsCaptureProtocolSelector(aSelector)) {
+        id real = self.realDelegate;
+        if (real && [real respondsToSelector:aSelector]) return real;
+    }
     return [super forwardingTargetForSelector:aSelector];
 }
 

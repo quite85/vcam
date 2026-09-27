@@ -74,17 +74,41 @@ static void VCamEnsureOverlayWindow(void) {
     if (gOverlayWindow) return;
 
     @try {
+        // ⚠️ 这里刻意**不调用 makeKeyAndVisible**。
+        //
+        // 曾经调用过，造成"重启完直接黑屏、看不到桌面"：
+        // SpringBoard 的 key window 被我们的透明窗口抢走之后，
+        // 它的窗口/场景系统被打乱，表现为桌面完全不出画面。
+        //
+        // 正确做法：我们的透明窗口只要"显示在最上层"就够了，
+        //          **绝不能成为 key window**。
+        //          makeKeyAndVisible = makeKey + visible，这里只做 visible。
+        UIWindowScene *scene = nil;
+        for (UIScene *s in UIApplication.sharedApplication.connectedScenes) {
+            if ([s isKindOfClass:UIWindowScene.class]) { scene = (UIWindowScene *)s; break; }
+        }
+
         CGRect screen = UIScreen.mainScreen.bounds;
-        gOverlayWindow = [[UIWindow alloc] initWithFrame:screen];
-        gOverlayWindow.windowLevel = UIWindowLevelAlert + 100;
+        if (scene) {
+            gOverlayWindow = [[UIWindow alloc] initWithWindowScene:scene];
+            gOverlayWindow.frame = screen;
+        } else {
+            // 场景还没就绪时用普通初始化（此时不显示，等用户按音量键再显示）
+            gOverlayWindow = [[UIWindow alloc] initWithFrame:screen];
+        }
+
+        // 层级略高于 Alert 即可，不要抬得过高
+        gOverlayWindow.windowLevel = UIWindowLevelAlert + 1;
         gOverlayWindow.backgroundColor = UIColor.clearColor;
-        gOverlayWindow.hidden = YES;
+        gOverlayWindow.hidden = YES;              // 默认隐藏，用户按音量键才显示
+        gOverlayWindow.userInteractionEnabled = YES;
 
         UIViewController *root = [[UIViewController alloc] init];
         root.view.backgroundColor = UIColor.clearColor;
         gOverlayWindow.rootViewController = root;
 
-        VCamLog(@"悬浮窗已创建（level=%.0f）", gOverlayWindow.windowLevel);
+        VCamLog(@"悬浮窗已创建（level=%.0f, scene=%@）",
+                gOverlayWindow.windowLevel, scene ? @"有" : @"无");
     } @catch (NSException *e) {
         VCamLog(@"创建悬浮窗异常: %@", e.reason);
     }
@@ -253,8 +277,23 @@ static void VCamShowPanel(void) {
     @try {
         if (!gOverlayWindow) { VCamLog(@"悬浮窗不存在"); return; }
 
+        // ⚠️ 只让它可见，**不要** makeKey。
+        //
+        // 曾经写成 [gOverlayWindow makeKeyAndVisible]，导致
+        // "重启完直接黑屏、看不到桌面" —— SpringBoard 的 key window
+        // 被这个透明窗口抢走，它的场景系统被打乱。
+        //
+        // 我们需要做的只是"把面板显示出来"，不需要成为 key window。
         gOverlayWindow.hidden = NO;
-        [gOverlayWindow makeKeyAndVisible];
+
+        // ⚠️ 如果窗口是用 initWithFrame 创建的（场景未就绪时的兜底路径），
+        //    它的 display 可能还没建立。这种情况下不要去 present 弹窗 ——
+        //    在没有 windowScene 的窗口上 present 是崩溃的常见来源。
+        if (!gOverlayWindow.windowScene) {
+            VCamLog(@"窗口还没有 windowScene，跳过弹面板（等下次）");
+            gOverlayWindow.hidden = YES;
+            return;
+        }
 
         BOOL on = [VCamFrameInjector isEnabled];
 
@@ -411,6 +450,14 @@ static void VCamInstallVolumeWatcher(void) {
 //  正确做法：在所有进程里都安装帧替换，
 //            SpringBoard 里额外装 UI 与音量监听。
 //
+//  ---- 另外：构造阶段做到"最小动作" ----
+//
+//  曾经在 %ctor 里延迟 1.5 秒就创建 UIWindow，导致
+//  "重启完直接黑屏、看不到桌面"。
+//  现在改成：构造阶段**只装音量监听**（很轻），
+//  悬浮窗与按钮全部推迟到用户第一次按音量减时才创建（惰性）。
+//  这样即使 UI 那条路有问题，也不会影响开机。
+//
 %ctor {
     @autoreleasepool {
         @try {
@@ -418,21 +465,31 @@ static void VCamInstallVolumeWatcher(void) {
             NSString *proc = NSProcessInfo.processInfo.processName ?: @"?";
             VCamLog(@"===== 载入 %@ (bundle=%@) pid=%d =====", proc, bid, getpid());
 
+            // ---- 安全开关 ----
+            // 如果这个文件存在，就完全不动手。
+            // 用途：万一插件导致 SpringBoard 崩溃，可以进安全模式后
+            //      用 Filza/终端 建这个文件，再重启就会是干净的系统；
+            //      或者把它当成一个"紧急关闭"标记。
+            NSString *offFlag = @"/var/mobile/Library/VirtualCamera/off";
+            if ([NSFileManager.defaultManager fileExistsAtPath:offFlag]) {
+                VCamLog(@"检测到 %@，跳过全部初始化（安全开关已启用）", offFlag);
+                return;
+            }
+
             BOOL isSpringBoard = [bid isEqualToString:@"com.apple.springboard"];
 
             // ---- 1) 帧替换：所有进程都装 ----
             [VCamFrameInjector install];
             [VCamMediaManager shared];
 
-            // ---- 2) SpringBoard：UI + 音量键 ----
+            // ---- 2) SpringBoard：只装音量监听（轻量，不碰 UI）----
             if (isSpringBoard) {
                 dispatch_after(dispatch_time(DISPATCH_TIME_NOW,
-                                             (int64_t)(1.5 * NSEC_PER_SEC)),
+                                             (int64_t)(2.0 * NSEC_PER_SEC)),
                                dispatch_get_main_queue(), ^{
                     @try {
                         VCamInstallVolumeWatcher();
-                        VCamEnsureFloatButton();
-                        VCamLog(@"===== SpringBoard 初始化完成 =====");
+                        VCamLog(@"===== SpringBoard 就绪（悬浮窗将在按音量减时创建） =====");
                     } @catch (NSException *e) {
                         VCamLog(@"SpringBoard 初始化异常: %@", e.reason);
                     }
