@@ -1,20 +1,19 @@
 Package: com.quite85.virtualcamera
-Name: 虚拟摄像头 (系统注入版)
+Name: 虚拟摄像头 (安全版)
 Version: 1.0.1
 Architecture: iphoneos-arm64
-Description: 虚拟摄像头 + 虚拟麦克风（含系统守护进程注入，系统级生效）—— rootless 版本，适用于 Dopamine / palera1n rootless / XinaA15 等无根越狱（安装到 /var/jb）
- 同时注入 App 层与 mediaserverd / camerad 等系统守护进程，
- 让所有调用系统相机管线的 App（包括未列入 filter 的）都拿到虚拟画面：
- 相册视频循环播放、相册图片静帧（约 30fps 重复）、
+Description: 虚拟摄像头 + 虚拟麦克风（App 层注入，不含系统守护进程注入）—— rootless 版本，适用于 Dopamine / palera1n rootless / XinaA15 等无根越狱（安装到 /var/jb）
+ 把调用系统相机的 App 的画面替换为虚拟源：相册视频循环、相册图片静帧，
  或接收电脑 OBS 推来的 MPEG-TS(H.264+AAC) 流并硬解注入。
- 支持系统相机、Safari 网页 getUserMedia、FaceTime、微信、Zoom 等。
+ 支持系统相机、Safari 网页 getUserMedia、以及常见社交 / 会议类 App。
  交互：按「音量减」弹出可拖动悬浮小窗，选择视频 / 图片 / OBS / 禁用替换。
  无卡密、无联网授权、无 UDID 上传，全部离线本地运行。
  .
- ⚠️ 本包注入 mediaserverd —— 它是 iOS 显示与媒体管线的上游。
-    若该 hook 崩溃进入重启循环，**会导致手机黑屏**（v1.0.0 曾发生）。
-    请先安装并稳定使用过「虚拟摄像头 (安全版)」，再考虑换成本包。
-    两者不能同时安装。
+ ⚠️ 本包为「安全版」：只注入 VCam.plist 里列出的普通 App 进程，
+    不注入 mediaserverd / camerad 等系统守护进程。
+    代价是少数未列入 filter 的 App 可能仍看到真实画面，
+    但不会出现黑屏等系统级故障。
+    需要系统级生效请改装「虚拟摄像头 (系统注入版)」，两者不能同时安装。
  .
  安装路径 /var/jb/Library/MobileSubstrate/DynamicLibraries 与
  /var/jb/Library/PreferenceBundles。请勿与 rootful 版同时安装。

@@ -227,12 +227,16 @@ SpringBoard（UI）与 mediaserverd（采集）是两个进程，不能共享内
 ```
 vcam/
 ├── Makefile                        # 主构建文件（rootful + rootless）
-├── control                         # rootful 包描述
-├── control-rootless                # rootless 包描述（Theos 按 scheme 自动挑选）
+├── control                         # rootful 包描述（系统注入版）
+├── control-rootless                # rootless 包描述（系统注入版）
+├── control-safe-rootful            # rootful 包描述（安全版，默认推荐）
+├── control-safe-rootless           # rootless 包描述（安全版，默认推荐）
 ├── entitlements.plist              # rootful entitlements
 ├── entitlements-rootless.plist     # rootless entitlements
-├── VCam.plist                      # filter：SpringBoard + 相机类 App（Bundles 名单）
-├── VCam-mediaserverd.plist         # filter：mediaserverd 等（Executables）
+├── VCam.plist                      # filter：SpringBoard + 相机/Safari 类 App（Bundles 名单）
+├── filters/
+│   ├── VCam-mediaserverd.plist.enabled   # 系统注入版的 filter（Executables: mediaserverd…）
+│   └── VCam-mediaserverd.plist.disabled  # 安全版的空 filter（永不匹配，覆盖旧文件用）
 ├── Tweak.x                         # Logos 主入口，按进程分流 + 核心 hook
 │
 ├── Core/                           # 编译成静态库 VCamCore，被 tweak 复用
@@ -417,22 +421,33 @@ ls -l /Library/MobileSubstrate/DynamicLibraries/VCam*            # rootful
 如果 `mediaserverd` 里**没有任何** `[hook][msd]` 行，说明这版 iOS 的私有符号
 没匹配上 —— 功能仍然可用（App 层接管），但极少数未注入的 App 可能拿到真实画面。
 
-### 4.5 ⚠️ 重要：mediaserverd 的 filter 需要补装
+### 4.5 ⚠️ 两个变体：安全版 vs 系统注入版
 
 Theos 只会自动安装**与 tweak 同名**的 `VCam.plist`。
-`VCam-mediaserverd.plist` 名字不同，**不会被自动安装** —— 不处理的话
-系统级注入（mediaserverd 层）根本不会加载。
+mediaserverd 的 filter 名字不同，**不会被自动安装** —— 必须放进 `layout/` 才会进 deb。
 
-**本工程已经在 CI 里自动处理好了**：`.github/workflows/build.yml` 里有一个
-「把 mediaserverd filter 放进 layout」步骤，会在编译前执行：
+从 v1.0.1 起，工程提供**两个变体**，区别就在这个 filter：
+
+| 变体 | 系统层注入 | 风险 | 何时用 |
+| --- | --- | --- | --- |
+| **安全版**（默认推荐） | ❌ 装 `filters/...disabled`（空 filter） | 最多某个 App 崩一次，**不会黑屏** | 先用这个。Safari 网页相机、系统相机、常见社交 App 都在 App 层过滤名单里 |
+| **系统注入版** | ✅ 装 `filters/...enabled` | ⚠️ **可能黑屏**（v1.0.0 曾发生） | 需要"连未列入 filter 的 App 也生效"时才用 |
+
+> **为什么安全版也要装一个"空 filter"**：如果你之前装过系统注入版，
+> 设备上已经存在那份声明了 `mediaserverd` 的 plist。
+> 若安全版不安装同名文件，dpkg 不会动旧那份 ——
+> **你以为换成了安全版，系统注入其实还在生效**。
+> 装一个永不匹配的空 filter 才能真正关掉它。
+
+**打包由 `scripts/build.sh` 自动处理**，它会在每个变体编译前填好 `layout/`：
 
 ```bash
-rm -rf layout
-mkdir -p layout/Library/MobileSubstrate/DynamicLibraries
-cp -f VCam-mediaserverd.plist layout/Library/MobileSubstrate/DynamicLibraries/
+# 安全版  → VCAM_SYSTEM_HOOK=0，layout 里放 filters/...disabled
+# 系统注入版 → VCAM_SYSTEM_HOOK=1，layout 里放 filters/...enabled
+./scripts/build.sh                  # 4 个包全打
+VARIANTS=safe ./scripts/build.sh    # 只打安全版
+VARIANTS=full ./scripts/build.sh    # 只打系统注入版
 ```
-
-这样打出来的 deb 就**自带**这个 filter，用户装完即生效，不需要手动 `cp`。
 
 #### layout/ 目录的规则（很容易踩坑）
 
@@ -442,15 +457,7 @@ cp -f VCam-mediaserverd.plist layout/Library/MobileSubstrate/DynamicLibraries/
 > 本工程真实踩过的坑：曾在 `layout/` 里放了 `README.txt`（说明文档）和
 > `.gitkeep`（占位文件），结果它们被一起打进了 deb，安装后在设备上出现
 > `/var/jb/README.txt` 和 `.../DynamicLibraries/.gitkeep` 两个垃圾文件。
-> 现在 workflow 里用 `rm -rf layout` 先清空再拷贝，保证 deb 内容完全可控。
-
-如果你要手动打包（不走 CI），记得先自己建好这个目录：
-
-```bash
-rm -rf layout
-mkdir -p layout/Library/MobileSubstrate/DynamicLibraries
-cp VCam-mediaserverd.plist layout/Library/MobileSubstrate/DynamicLibraries/
-```
+> 现在 `build.sh` 每轮都用 `rm -rf layout` 先清空再填充，deb 内容完全可控。
 
 （rootless 打包时 Theos 会自动给 `layout/` 下的路径加 `/var/jb` 前缀。）
 

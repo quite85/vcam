@@ -6,6 +6,20 @@
             "com.apple.mobileslideshow",
             "com.apple.FaceTime",
             "com.apple.facetime",
+            // ---- Safari / 网页 getUserMedia 相关 ----
+            // 用户的主要场景是「用 Safari 打开网站调用摄像头拍照」。
+            // Safari 的网页相机调用链路：
+            //   Safari(WKWebView) → WebKit 的 GPU/网络进程 → mediaserverd
+            // 「拍一张照片」这类 capturer 通常在 WebContent 进程里跑，
+            // 所以这里同时列出 Safari 与 WebKit 的进程名。
+            //
+            // ⚠️ 这些都是**普通 App 进程**（不是系统守护进程），
+            //    即使 hook 出问题，最多是 Safari 崩一次，不会黑屏。
+            "com.apple.mobilesafari",
+            "com.apple.SafariViewService",
+            "com.apple.WebKit.WebContent",
+            "com.apple.WebKit.Networking",
+            "com.apple.WebKit.GPU",
             "com.apple.AVConference",
             "com.apple.InCallService",
             "com.apple.telephonyutilities.callservicesd",

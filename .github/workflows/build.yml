@@ -127,22 +127,22 @@ jobs:
           fi
           ls -l repo/CydiaIcon.png 2>/dev/null || echo "（最终仍无图标文件）"
 
-      - name: 把 mediaserverd filter 放进 layout（必须，在编译之前）
+      - name: 清理 layout（实际内容由 build.sh 按变体填充）
         run: |
           set -e
-          # 关键：Theos 只会自动安装与 tweak 同名的 VCam.plist。
-          # VCam-mediaserverd.plist 名字不同，必须放进 layout/ 才会被打进 deb。
-          #
           # ⚠️ layout/ 下的**所有**文件都会被原样打进 deb（安装到设备），
           #    所以放在这里的只能是"必须安装到设备的东西"。
           #    文档、.gitkeep 之类的辅助文件绝不能放在 layout/ 里 ——
           #    曾经因此让 deb 里多出 README.txt 和 .gitkeep 两个垃圾文件。
-          #    这里在拷贝前先清空，保证 deb 内容完全可控。
+          #
+          # 从 v1.0.1 起 layout/ 的内容**完全由 scripts/build.sh 决定**：
+          #   · 安全版  → filters/VCam-mediaserverd.plist.disabled（空 filter）
+          #   · 系统注入版 → filters/VCam-mediaserverd.plist.enabled（注入 mediaserverd）
+          # 这样同一个 layout 目录能按变体产出两种包，各自只装自己需要的 filter。
           rm -rf layout
           mkdir -p layout/Library/MobileSubstrate/DynamicLibraries
-          cp -f VCam-mediaserverd.plist layout/Library/MobileSubstrate/DynamicLibraries/
-          echo "layout 内容（会进 deb）："
-          find layout -type f
+          echo "layout 已清空（由 build.sh 在打包每个变体前填充）"
+          find layout -type f || true
 
       - name: Logos 预检（诊断用，失败不阻塞编译）
         id: logoscheck

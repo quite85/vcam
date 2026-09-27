@@ -1,15 +1,23 @@
 #!/usr/bin/env bash
 # ============================================================================
-#  scripts/build.sh —— 一次打出 rootful + rootless 两个 .deb
+#  scripts/build.sh —— 一次打出「安全版」+「系统注入版」的 rootful/rootless deb
 #
 #  用法：
-#    ./scripts/build.sh                     # 打两个包（默认，含 OBS 支持）
+#    ./scripts/build.sh                     # 打全部 4 个包（安全版 + 系统注入版 × rootful/rootless）
 #    VCAM_ENABLE_OBS=0 ./scripts/build.sh   # 不带 FFmpeg 的轻量包
-#    ONLY=rootless ./scripts/build.sh       # 只打 rootless
+#    ONLY=rootless ./scripts/build.sh       # 只打 rootless（两种变体都打）
+#    VARIANTS=safe ./scripts/build.sh       # 只打安全版
+#    VARIANTS=full ./scripts/build.sh       # 只打系统注入版
 #
-#  产物：
-#    packages/com.quite85.vcam_<版本>_iphoneos-arm64-rootful.deb
-#    packages/com.quite85.vcam_<版本>_iphoneos-arm64-rootless.deb
+#  产物（packages/）：
+#    <pkgid>_<版本>_iphoneos-arm64-rootful-safe.deb      安全版（默认推荐）
+#    <pkgid>_<版本>_iphoneos-arm64-rootless-safe.deb
+#    <pkgid>_<版本>_iphoneos-arm64-rootful-full.deb      系统注入版（含 mediaserverd）
+#    <pkgid>_<版本>_iphoneos-arm64-rootless-full.deb
+#
+#  两个变体的区别（详见 Makefile 的 VCAM_SYSTEM_HOOK 注释）：
+#    safe = VCAM_SYSTEM_HOOK=0，只注入 App 层，**不会黑屏**
+#    full = VCAM_SYSTEM_HOOK=1，额外注入 mediaserverd 等系统守护进程
 #
 #  前置条件：
 #    - 已安装 Theos 并 export THEOS=/opt/theos
@@ -23,6 +31,7 @@ cd "$ROOT_DIR"
 PKG_ID="${VCAM_PKG_ID:-com.quite85.virtualcamera}"
 ENABLE_OBS="${VCAM_ENABLE_OBS:-1}"
 ONLY="${ONLY:-all}"
+VARIANTS="${VARIANTS:-all}"
 # 编译用 SDK 版本。留空 = 让 Theos 用 Xcode 自带的 SDK（macOS 本机开发）。
 # CI 上必须显式指定，因为运行器上没有 iPhoneOS SDK。
 SDK_VERSION="${VCAM_SDK_VERSION:-}"
@@ -68,13 +77,13 @@ fi
 
 VERSION="$(grep -m1 '^Version:' control-rootful | awk '{print $2}')"
 [ -n "$VERSION" ] || { echo "❌ 无法从 control-rootful 读取 Version" >&2; exit 1; }
-echo "📦 版本：$VERSION  包名：$PKG_ID  OBS=$ENABLE_OBS"
+echo "📦 版本：$VERSION  包名：$PKG_ID  OBS=$ENABLE_OBS  变体=$VARIANTS"
 
 OUT_DIR="$ROOT_DIR/packages"
 mkdir -p "$OUT_DIR"
 
 # Theos 只读根目录的 ./control，所以打包不同变体前要先把对应的 control 拷过去。
-# 退出时（包括失败/中断）恢复成 rootful 的版本，保持仓库干净。
+# 退出时（包括失败/中断）恢复成默认的 control-rootful，保持仓库干净。
 restore_control() {
     cp -f "$ROOT_DIR/control-rootful" "$ROOT_DIR/control" 2>/dev/null || true
 }
@@ -84,22 +93,60 @@ trap restore_control EXIT INT TERM
 # 打包一个变体
 #   $1 = scheme（空 = rootful，或 rootless / roothide）
 #   $2 = 文件名标记（rootful / rootless / roothide）
+#   $3 = 变体名（safe / full）
 # ---------------------------------------------------------------------------
 build_one() {
     local scheme="$1"
     local tag="$2"
+    local variant="$3"
 
     echo ""
     echo "=============================================================="
-    echo " 打包：$tag"
+    echo " 打包：$tag / $variant"
     echo "=============================================================="
 
-    # 切换到对应的 control
-    if [ "$tag" = "rootful" ]; then
-        cp -f "$ROOT_DIR/control-rootful" "$ROOT_DIR/control"
+    # ---- 按变体选择 control 与系统注入开关 ----
+    local ctl
+    local syshook
+    if [ "$variant" = "safe" ]; then
+        syshook=0
+        if [ "$tag" = "rootful" ]; then ctl="control-safe-rootful"; else ctl="control-safe-rootless"; fi
     else
-        cp -f "$ROOT_DIR/control-rootless" "$ROOT_DIR/control"
+        syshook=1
+        if [ "$tag" = "rootful" ]; then ctl="control-rootful"; else ctl="control-rootless"; fi
     fi
+    if [ ! -f "$ROOT_DIR/$ctl" ]; then
+        echo "❌ 找不到 control 文件：$ctl" >&2
+        exit 1
+    fi
+    cp -f "$ROOT_DIR/$ctl" "$ROOT_DIR/control"
+    echo "  control = $ctl   VCAM_SYSTEM_HOOK = $syshook"
+
+    # ---- 按变体准备 layout/ 里的 mediaserverd filter ----
+    # layout/ 下的文件会被原样打进 deb 并安装到设备。
+    #
+    # 为什么要放两套模板：
+    #   · safe   装 filters/...disabled（空 filter，永不匹配）——
+    #            不只是"不注入"，更要**覆盖掉**之前系统注入版留下的那份 plist，
+    #            否则换装安全版后旧 filter 还在，系统注入依然生效。
+    #   · full   装 filters/...enabled（Executables = mediaserverd 等）
+    #
+    # 注意这里每次都 rm -rf layout 再重建：layout/ 里只允许有
+    # "必须安装到设备的东西"，不留任何辅助文件（曾把 README.txt 打进 deb）。
+    rm -rf "$ROOT_DIR/layout"
+    mkdir -p "$ROOT_DIR/layout/Library/MobileSubstrate/DynamicLibraries"
+    local filter_src
+    if [ "$variant" = "safe" ]; then
+        filter_src="$ROOT_DIR/filters/VCam-mediaserverd.plist.disabled"
+    else
+        filter_src="$ROOT_DIR/filters/VCam-mediaserverd.plist.enabled"
+    fi
+    if [ ! -f "$filter_src" ]; then
+        echo "❌ 找不到 filter 模板：$filter_src" >&2
+        exit 1
+    fi
+    cp -f "$filter_src" "$ROOT_DIR/layout/Library/MobileSubstrate/DynamicLibraries/VCam-mediaserverd.plist"
+    echo "  layout filter = $(basename "$filter_src")"
 
     make clean >/dev/null 2>&1 || true
 
@@ -132,20 +179,22 @@ build_one() {
     if [ -n "$scheme" ]; then
         MAKEFLAGS=-k make package FINALPACKAGE=1 \
              VCAM_ENABLE_OBS="$ENABLE_OBS" \
+             VCAM_SYSTEM_HOOK="$syshook" \
              THEOS_PACKAGE_SCHEME="$scheme" \
-             2>&1 | tee "/tmp/vcam-build-$tag.log"
+             2>&1 | tee "/tmp/vcam-build-$tag-$variant.log"
         local make_rc=${PIPESTATUS[0]}
     else
         MAKEFLAGS=-k make package FINALPACKAGE=1 \
              VCAM_ENABLE_OBS="$ENABLE_OBS" \
-             2>&1 | tee "/tmp/vcam-build-$tag.log"
+             VCAM_SYSTEM_HOOK="$syshook" \
+             2>&1 | tee "/tmp/vcam-build-$tag-$variant.log"
         local make_rc=${PIPESTATUS[0]}
     fi
     if [ "$make_rc" -ne 0 ]; then
-        echo "❌ make package 失败（退出码 ${make_rc}），详见 /tmp/vcam-build-${tag}.log"
+        echo "❌ make package 失败（退出码 ${make_rc}），详见 /tmp/vcam-build-${tag}-${variant}.log"
         # 把错误条数统计出来，方便一眼看出还剩几个问题
         local errcount
-        errcount=$(grep -c 'error:' "/tmp/vcam-build-$tag.log" 2>/dev/null || echo 0)
+        errcount=$(grep -c 'error:' "/tmp/vcam-build-$tag-$variant.log" 2>/dev/null || echo 0)
         echo "   本次编译共出现 $errcount 条 error（-k 模式，已尽量全部报告）"
         return "$make_rc"
     fi
@@ -158,21 +207,21 @@ build_one() {
         src="$(ls -t "$ROOT_DIR"/packages/*.deb 2>/dev/null | head -n 1 || true)"
     fi
     if [ -z "$src" ]; then
-        echo "❌ $tag 打包失败，请查看 /tmp/vcam-build-$tag.log" >&2
+        echo "❌ $tag/$variant 打包失败，请查看 /tmp/vcam-build-$tag-$variant.log" >&2
         exit 1
     fi
 
+    # 文件名同时带 tag（rootful/rootless）与变体（safe/full），便于区分
     local arch_name="iphoneos-arm64"
-    local dest="$OUT_DIR/${PKG_ID}_${VERSION}_${arch_name}-${tag}.deb"
+    local dest="$OUT_DIR/${PKG_ID}_${VERSION}_${arch_name}-${tag}-${variant}.deb"
     cp -f "$src" "$dest"
 
     # ⚠️ 把 Theos 命名的原始 deb 删掉，只保留上面这份规范命名的。
     #    Theos 产出的名字是 com.<pkg>_<ver>_iphoneos-arm.deb 或 [...]_iphoneos-arm64.deb
-    #    （取决于 control 里的 Architecture），既不带 -rootful/-rootless 后缀，
-    #    也和我们的命名重复。
+    #    （取决于 control 里的 Architecture），既不带后缀，也和我们的命名重复。
     #    不删的话 packages/ 里会同时存在两份内容相同、名字不同的 deb，
     #    make-repo.sh 把它们都拷进 debs/ 并各写一条 Packages 记录，
-    #    于是源里出现 4 条记录（实际只有 2 个包），用户不知道该装哪个。
+    #    于是源里出现重复条目，用户不知道该装哪个。
     if [ "$src" != "$dest" ]; then
         rm -f "$src" 2>/dev/null || true
         echo "   （已移除 Theos 原始命名产物：$(basename "$src")）"
@@ -180,15 +229,37 @@ build_one() {
     echo "✅ 产出：$(basename "$dest")"
 }
 
+# ---------------------------------------------------------------------------
+# 按 ONLY（架构）× VARIANTS（变体）组合打包
+# ---------------------------------------------------------------------------
+run_one() {
+    local arch="$1" variant="$2"
+    local scheme tag
+    if [ "$arch" = "rootful" ]; then scheme=""; tag="rootful"; else scheme="$arch"; tag="$arch"; fi
+    build_one "$scheme" "$tag" "$variant"
+}
+
+ARCH_LIST=()
 case "$ONLY" in
-    rootful)  build_one "" rootful ;;
-    rootless) build_one rootless rootless ;;
-    all)
-        build_one "" rootful
-        build_one rootless rootless
-        ;;
+    rootful)  ARCH_LIST=(rootful) ;;
+    rootless) ARCH_LIST=(rootless) ;;
+    all)      ARCH_LIST=(rootful rootless) ;;
     *) echo "❌ ONLY 只能是 rootful / rootless / all" >&2; exit 1 ;;
 esac
+
+VARIANT_LIST=()
+case "$VARIANTS" in
+    safe) VARIANT_LIST=(safe) ;;
+    full) VARIANT_LIST=(full) ;;
+    all)  VARIANT_LIST=(safe full) ;;
+    *) echo "❌ VARIANTS 只能是 safe / full / all" >&2; exit 1 ;;
+esac
+
+for v in "${VARIANT_LIST[@]}"; do
+    for a in "${ARCH_LIST[@]}"; do
+        run_one "$a" "$v"
+    done
+done
 
 echo ""
 echo "=============================================================="

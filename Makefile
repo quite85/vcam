@@ -47,6 +47,23 @@ export VCAM_PKG_ID     ?= com.quite85.virtualcamera
 export VCAM_ENABLE_OBS ?= 1
 # 是否附带 PreferenceLoader 设置面板（默认关，主交互走音量键悬浮窗）
 export VCAM_BUILD_PREFS ?= 0
+
+# ---------------------------------------------------------------------------
+# ⚠️ 系统层注入开关（默认关！这是 v1.0.0 黑屏事故的根因）
+# ---------------------------------------------------------------------------
+# 0（默认）= 只注入 App 层（VCam.plist 的 Bundles 列表）。
+#            出问题最多是某个 App 崩溃，**不会黑屏**。
+# 1        = 额外安装并加载 VCam-mediaserverd.plist，注入
+#            mediaserverd / camerad / audioaccessoryd 等系统守护进程。
+#
+# 为什么默认关：
+#   v1.0.0 默认开着，结果用户装上后**手机黑屏**。
+#   mediaserverd 是整个 iOS 显示与媒体管线的上游，
+#   一旦它的 hook 崩溃进入重启循环，SpringBoard 就拿不到画面 → 黑屏。
+#
+# 需要系统级生效（让没被注入的 App 也拿到虚拟画面）时才设为 1，
+# 并且**必须先确认安全版在自己机型上稳定**。
+export VCAM_SYSTEM_HOOK ?= 0
 # Logos 代码生成器。
 #   留空（默认）= MobileSubstrate 生成器，产物调用 MSHookMessageEx，
 #                会写入 .linker_option "-framework CydiaSubstrate"。
