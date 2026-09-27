@@ -178,7 +178,11 @@ jobs:
 
           FAILED=0
           OKCOUNT=0
-          for src in UI/VCamPanel.m UI/VCamPickerController.m UI/VCamVolumeHook.m \
+          for src in Core/VCamConfig.m Core/VCamStateStore.m Core/VCamPixelBufferUtils.m \
+                     Core/VCamFrameSource.m Core/VCamImageSource.m Core/VCamVideoSource.m \
+                     Core/VCamConcurrentQueue.m Core/VCamOBSAddress.m Core/VCamCore.m \
+                     Core/VCamOBSSource_stub.m \
+                     UI/VCamPanel.m UI/VCamPickerController.m UI/VCamVolumeHook.m \
                      UI/VCamVideoDataOutputProxy.m UI/VCamPreviewOverlay.m UI/VCamHUD.m \
                      Media/VCamMovieFileInjector.m Media/VCamPhotoOutputInjector.m \
                      Mic/VCamMicInjector.m; do

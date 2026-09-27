@@ -58,9 +58,21 @@ if [ -s "$PRE_DIR/logos.err" ]; then
 fi
 
 # ---- 2) 收集要编译的源文件 ----
-#   Tweak.x 用预处理产物；其余用真实源文件（也就是错误位置精确的关键）
+#   Tweak.x 用预处理产物；其余用真实源文件（错误位置才精确）。
+#   注意：Core 的源文件现在直接编进主 tweak（不再有独立的 VCamCore 库），
+#   所以这里也要一起检查，否则会漏掉一半文件。
 SRCS=(
     "$PRE_DIR/Tweak.m"
+    "Core/VCamConfig.m"
+    "Core/VCamStateStore.m"
+    "Core/VCamPixelBufferUtils.m"
+    "Core/VCamFrameSource.m"
+    "Core/VCamImageSource.m"
+    "Core/VCamVideoSource.m"
+    "Core/VCamConcurrentQueue.m"
+    "Core/VCamOBSAddress.m"
+    "Core/VCamCore.m"
+    "Core/VCamOBSSource_stub.m"
     "UI/VCamPanel.m"
     "UI/VCamPickerController.m"
     "UI/VCamHUD.m"

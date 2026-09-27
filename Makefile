@@ -70,11 +70,49 @@ endif
 include $(THEOS)/makefiles/common.mk
 
 # ===========================================================================
-# 1) VCamCore —— 共享静态库（帧源 / 状态 / 解码 / 工具）
+# 1) 关于「VCamCore 静态库」的说明（已改为直接编进 tweak）
 # ===========================================================================
-LIBRARY_NAME = VCamCore
+# 原来这里是：
+#     LIBRARY_NAME = VCamCore
+#     ...
+#     include $(THEOS_MAKE_PATH)/library.mk
+# 主 tweak 里用 VCam_LIBRARIES = VCamCore 链接它。
+#
+# 实际构建时报：
+#     ==> Linking tweak VCam (arm64)…
+#     ld: library 'VCamCore' not found
+#     clang: error: linker command failed with exit code 1
+#
+# 原因（已核对 Theos 2.5 的 makefiles）：
+#   · library.mk 第 22 行
+#       _LOCAL_LINKAGE_TYPE = $(or $($(INSTANCE)_LINKAGE_TYPE),$(THEOS_LINKAGE_TYPE))
+#     common.mk 第 297 行
+#       THEOS_LINKAGE_TYPE ?= dynamic
+#     即默认产出的是 **动态库 VCamCore.dylib**，而 VCam_LIBRARIES 展开成
+#     -lVCamCore，链接器找不到 libVCamCore.a，于是失败。
+#     构建日志也印证了这点：只有 Linking / Stripping / Signing 这些
+#     动态库才有的步骤，**从未出现任何 .a 归档**。
+#   · 看起来可以用 VCamCore_LINKAGE_TYPE = static 让它产出 .a，
+#     但 rules.mk 里负责生成归档的那条规则被
+#         ifeq ($(_THEOS_LIBRARY_TYPE),static)
+#     包住，而 _THEOS_LIBRARY_TYPE **在整个 Theos 里只被读取、从未被赋值**
+#     （全仓库搜索只命中 rules.mk:551 一处），条件永远为假 ——
+#     也就是说那条静态归档分支是不可达的死代码。因此这条捷径并不可靠。
+#
+# 结论：不使用 Theos 的 library 机制，把 Core 的源码直接编进主 tweak。
+#   · 少一层跨目标依赖，链接错误从设计上消失
+#   · VCamCore 的每个源文件本来就只被 libtweak 这一处使用
+#   · Core 里的类名/文件名保持不变（VCamCore.h / VCamCore.m 仍存在），
+#     只是它们随主 tweak 一起编译，不再单独打成一个库
+# ===========================================================================
 
-VCamCore_FILES = \
+# ===========================================================================
+# 2) VCam —— 主 tweak（Core + UI + Media + Mic + hook）
+# ===========================================================================
+TWEAK_NAME = VCam
+
+VCam_FILES = \
+    Tweak.x \
     Core/VCamConfig.m \
     Core/VCamStateStore.m \
     Core/VCamPixelBufferUtils.m \
@@ -83,45 +121,7 @@ VCamCore_FILES = \
     Core/VCamVideoSource.m \
     Core/VCamConcurrentQueue.m \
     Core/VCamOBSAddress.m \
-    Core/VCamCore.m
-
-ifeq ($(VCAM_ENABLE_OBS),1)
-VCamCore_FILES += \
-    Core/VCamTSDemuxer.m \
-    Core/VCamOBSAudioDecoder.m \
-    Core/VCamVideoToolboxDecoder.m \
-    Core/VCamOBSSource.m
-VCamCore_CFLAGS = -DVCAM_ENABLE_OBS=1
-else
-VCamCore_FILES += Core/VCamOBSSource_stub.m
-VCamCore_CFLAGS = -DVCAM_ENABLE_OBS=0
-endif
-
-VCamCore_CFLAGS += -fobjc-arc -Wno-deprecated-declarations -Wno-unused-variable \
-                   -Wno-unused-function -Wno-nullability-completeness \
-                   -Wno-objc-method-access -Wno-shadow -Wno-unused-parameter \
-                   -Wno-unguarded-availability-new \
-                   -DVCAM_PKG_ID=\"$(VCAM_PKG_ID)\"
-VCamCore_FRAMEWORKS = Foundation UIKit AVFoundation CoreMedia CoreVideo \
-                      AudioToolbox VideoToolbox CoreImage ImageIO Photos
-VCamCore_LIBRARIES = z bz2
-ifeq ($(VCAM_ENABLE_OBS),1)
-# FFmpeg 只用于 mpegts demux 与 h264/aac parser，不需要编码器。
-# 构建方法见 scripts/ffmpeg-deps.sh
-VCamCore_EXTRA_FRAMEWORKS = avformat avcodec avutil swresample
-VCamCore_CFLAGS += -I$(THEOS)/vendor/include/ffmpeg
-VCamCore_LDFLAGS = -L$(THEOS)/vendor/lib
-endif
-
-include $(THEOS_MAKE_PATH)/library.mk
-
-# ===========================================================================
-# 2) VCam —— 主 tweak（UI + hook + 注入）
-# ===========================================================================
-TWEAK_NAME = VCam
-
-VCam_FILES = \
-    Tweak.x \
+    Core/VCamCore.m \
     UI/VCamPanel.m \
     UI/VCamPickerController.m \
     UI/VCamHUD.m \
@@ -132,39 +132,62 @@ VCam_FILES = \
     Media/VCamMovieFileInjector.m \
     Mic/VCamMicInjector.m
 
+# OBS 支持（可选）：VCAM_ENABLE_OBS=0 时用 stub 顶替整个 OBS 模块
+ifeq ($(VCAM_ENABLE_OBS),1)
+VCam_FILES += \
+    Core/VCamTSDemuxer.m \
+    Core/VCamOBSAudioDecoder.m \
+    Core/VCamVideoToolboxDecoder.m \
+    Core/VCamOBSSource.m
+VCAM_OBS_DEFINE = 1
+else
+VCam_FILES += Core/VCamOBSSource_stub.m
+VCAM_OBS_DEFINE = 0
+endif
+
 # ---------------------------------------------------------------------------
-# include 路径（这一条曾经让构建失败）
+# include 路径
 # ---------------------------------------------------------------------------
 # 项目里跨目录使用引号 import，例如：
-#     UI/VCamPanel.h        →  #import "VCamConfig.h"      （文件在 Core/）
-#     Media/VCamMovieFileInjector.m → #import "VCamCore.h" （文件在 Core/）
-#     Mic/VCamMicInjector.m →  #import "VCamPreviewOverlay.h"（文件在 UI/）
-#
+#     UI/VCamPanel.h                →  #import "VCamConfig.h"      （在 Core/）
+#     Media/VCamMovieFileInjector.m →  #import "VCamCore.h"         （在 Core/）
+#     Mic/VCamMicInjector.m         →  #import "VCamPreviewOverlay.h"（在 UI/）
 # 引号 import 只在「当前文件所在目录」和 -I 指定的目录里查找，
 # 不加这些 -I 就会报：
 #     UI/VCamPanel.h:17:9: fatal error: 'VCamConfig.h' file not found
-#
-# Tweak.x 位于仓库根目录，其它源文件在子目录里，
-# 所以下面把仓库根目录与四个子目录全部加进 -I。
+# Tweak.x 在仓库根目录，其余源文件在四个子目录里，所以全部加进来。
 #
 # 说明：这里刻意 **不** 链接 libsubstrate。
-#   - Logos 的 %hook 走的是运行时 class_replaceMethod / MSHookFunction（dlsym 拿），
-#     不需要链接期符号；
-#   - 手工的 swizzle 全用 Objective-C runtime API；
-#   - 私有 C 符号的 hook 在 Tweak.x 里用 dlsym(RTLD_DEFAULT, "MSHookFunction")。
-# 这样在 rootful / rootless / roothide 三种环境下都不会因为库路径不同而链接失败。
+#   · Logos 的 %hook 走运行时 class_replaceMethod / MSHookFunction
+#   · 手工 swizzle 全用 Objective-C runtime API
+#   · 私有 C 符号的 hook 用 dlsym(RTLD_DEFAULT, "MSHookFunction")
+# 这样 rootful / rootless / roothide 三种环境都不会因库路径不同而失败。
 VCam_CFLAGS = -fobjc-arc -Wno-deprecated-declarations -Wno-unused-variable \
               -Wno-unused-function -Wno-nullability-completeness \
               -Wno-objc-method-access -Wno-shadow -Wno-unused-parameter \
               -Wno-unguarded-availability-new \
               -I$(THEOS_PROJECT_DIR) -ICore -IUI -IMedia -IMic \
-              -DVCAM_ENABLE_OBS=$(VCAM_ENABLE_OBS) \
+              -DVCAM_ENABLE_OBS=$(VCAM_OBS_DEFINE) \
               -DVCAM_PKG_ID=\"$(VCAM_PKG_ID)\"
+
+VCam_PRIVATE_FRAMEWORKS = MediaToolbox
+
+ifeq ($(VCAM_ENABLE_OBS),1)
+# FFmpeg 只用于 mpegts demux 与 h264/aac parser，不需要编码器。
+# 构建方法见 scripts/ffmpeg-deps.sh
+VCam_EXTRA_FRAMEWORKS = avformat avcodec avutil swresample
+VCam_CFLAGS += -I$(THEOS)/vendor/include/ffmpeg
+VCam_LDFLAGS = -L$(THEOS)/vendor/lib
+endif
 
 VCam_FRAMEWORKS = Foundation UIKit AVFoundation CoreMedia CoreVideo \
                   AudioToolbox Accelerate QuartzCore MediaPlayer PhotosUI \
                   Photos ImageIO
-VCam_LIBRARIES = VCamCore
+
+# 注意：这里**没有** VCam_LIBRARIES = VCamCore。
+# Core 的源码已经直接编进本 target（见上面的 VCam_FILES），
+# 不需要也无法再链接一个名为 VCamCore 的库。
+# 详见文件开头「关于 VCamCore 静态库的说明」。
 
 include $(THEOS_MAKE_PATH)/tweak.mk
 
