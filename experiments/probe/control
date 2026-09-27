@@ -1,0 +1,18 @@
+Package: com.quite85.vcamprobe
+Name: VCam 对照测试
+Version: 1.0.0
+Architecture: iphoneos-arm64
+Description: 对照测试包 —— 验证插件注入是否生效。
+ 只注入 SpringBoard，只做一件事：启动 3 秒后弹出一个弹窗。
+ .
+ 三种结果：
+ · 屏幕弹出弹窗  → 注入框架正常，问题在 VCam 代码里
+ · 屏幕什么都没出现 → 注入没生效，是越狱环境/注入框架的问题
+ .
+ 不含任何其他功能，不碰相机、不碰系统守护进程。
+Homepage: https://github.com/quite85/vcam
+Maintainer: quite85 <quite85@users.noreply.github.com>
+Author: quite85 <quite85@users.noreply.github.com>
+Section: Tweaks
+Depends: firmware (>= 15.0), mobilesubstrate | ellekit
+Tag: purpose::extension, role::hacker
