@@ -1,0 +1,48 @@
+# ============================================================================
+#  .gitattributes —— 强制关键文件使用 LF 换行
+#
+#  为什么必须要有这个文件：
+#   Windows 上 git 默认 autocrlf=true，会把仓库里的 LF 转成 CRLF。
+#   一旦 shell 脚本 / Makefile 带上 CRLF：
+#     · make 会报「missing separator」或莫名其妙的目标找不到
+#     · bash 会报 '$'\r': command not found'
+#   在 macOS（GitHub Actions Runner）上 checkout 时就会踩到这个坑，
+#   表现为「本地能编译、CI 一定失败」。
+#
+#  这里显式声明这些文件的换行符必须是 LF，git 检查出时不会自动转换，
+#  也不会在 commit 时报警告。
+# ============================================================================
+
+# 默认：自动识别文本文件，不做换行转换
+* text=auto
+
+# ---- 必须是 LF 的文件 ----
+*.sh            text eol=lf
+*.x             text eol=lf
+*.xm            text eol=lf
+*.m             text eol=lf
+*.h             text eol=lf
+*.c             text eol=lf
+*.cpp           text eol=lf
+*.plist         text eol=lf
+*.conf          text eol=lf
+*.json          text eol=lf
+*.yml           text eol=lf
+*.yaml          text eol=lf
+*.md            text eol=lf
+*.txt           text eol=lf
+Makefile        text eol=lf
+makefile        text eol=lf
+control         text eol=lf
+control-*       text eol=lf
+.gitkeep        text eol=lf
+
+# ---- 二进制文件：明确不要改动 ----
+*.png           binary
+*.jpg           binary
+*.jpeg          binary
+*.deb           binary
+*.gz            binary
+*.bz2           binary
+*.xz            binary
+*.zip           binary
