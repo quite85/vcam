@@ -130,7 +130,7 @@ build_one() {
         local make_rc=${PIPESTATUS[0]}
     fi
     if [ "$make_rc" -ne 0 ]; then
-        echo "❌ make package 失败（退出码 $make_rc），详见 /tmp/vcam-build-$tag.log"
+        echo "❌ make package 失败（退出码 ${make_rc}），详见 /tmp/vcam-build-${tag}.log"
         # 把错误条数统计出来，方便一眼看出还剩几个问题
         local errcount
         errcount=$(grep -c 'error:' "/tmp/vcam-build-$tag.log" 2>/dev/null || echo 0)

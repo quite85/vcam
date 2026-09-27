@@ -127,14 +127,23 @@ jobs:
           echo "layout 内容："
           find layout -type f
 
-      - name: Logos 预检（30 秒内暴露 Logos 类错误，不必等编译）
+      - name: Logos 预检（诊断用，失败不阻塞编译）
+        id: logoscheck
+        continue-on-error: true
         run: |
-          set -e
-          chmod +x scripts/precheck-logos.sh
           # 这一步检查 Tweak.x 经过 Logos 之后生成代码的 6 项问题。
           # 起因：曾经把 #import 写在 %hook 之后，Logos 把它塞进方法体，
           #       logos.pl 退出码是 0，直到 clang 编译才报出很难懂的错。
-          ./scripts/precheck-logos.sh
+          #
+          # ⚠️ 设计要点：这是**诊断工具**，用 continue-on-error: true。
+          #    它自己的 bug 绝不能阻塞真正的编译 ——
+          #    之前就是因为把预检放在编译前且不忽略失败，
+          #    预检脚本里一个 set -u 的变量名问题把整个构建堵死了。
+          chmod +x scripts/precheck-logos.sh || true
+          ./scripts/precheck-logos.sh 2>&1 | tee -a /tmp/vcam-full-build.log || {
+            echo "::warning::Logos 预检未通过（见上方输出）。编译仍会继续。"
+            exit 0
+          }
 
       - name: 编译两个 deb
         id: builddeb
@@ -149,7 +158,7 @@ jobs:
             [ -f "$f" ] && { echo "" >> /tmp/vcam-full-build.log; cat "$f" >> /tmp/vcam-full-build.log; }
           done
           if [ $RC -ne 0 ]; then
-            echo "::error::编译失败，退出码 $RC。完整日志见 artifact: vcam-build-logs"
+            echo "::error::编译失败，退出码 ${RC}。完整日志见 artifact: vcam-build-logs"
             exit $RC
           fi
           echo "--- 产物 ---"

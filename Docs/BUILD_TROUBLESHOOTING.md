@@ -295,4 +295,89 @@ VCam 默认**不切换**，原因：Dopamine 的 ElleKit 自带 CydiaSubstrate
 2. **build.sh 用数组传参了吗？** 用了 → 坑 2（bash 3.2）
 3. **有 `-Wpointer-sign` 报错吗？** 有 → 坑 3（检查 `notify_*` 出参类型）
 4. **日志多大？** <1KB 说明没进编译，先查脚本本身
-5. **`Tweak.x` 本地 Logos 预检过吗？** 没过 → 先跑上面的 perl 命令
+5. **`Tweak.x` 本地 Logos 预检过吗？** 没过 → 先跑 `./scripts/precheck-logos.sh`
+
+---
+
+## 坑 4：bash 3.2 会把紧贴变量的中文字符首字节吃进变量名
+
+### 现象
+
+```
+./scripts/precheck-logos.sh: line 146: TARGET_X<某个乱码字节>: unbound variable
+```
+
+脚本里前 6 项检查**全部通过**，却在最后一行 `echo` 上崩了，
+而且报错里的变量名看着像 `TARGET_X` 后面跟了个乱码字符。
+
+### 根因
+
+出问题的写法：
+
+```bash
+echo " ✅ 预检全部通过（$TARGET_X）"
+```
+
+`$TARGET_X` 后面紧贴的是中文全角括号「）」。
+
+**bash 解析变量名时只认 `[A-Za-z0-9_]`，遇到非 ASCII 字节就停**——
+按道理应该在「）」的第一个字节处停下，变量名解析为 `TARGET_X`。
+
+但在 **bash 3.2（macOS 自带）** 下，配合 `set -u`（nounset），
+多字节字符的首字节会被并进变量名，于是查找的变量变成
+`TARGET_X\xef`（不存在）→ 直接报 `unbound variable` 并退出。
+
+bash 4.4+ 上不会复现，所以**本地 Linux 测试完全正常，只有 macOS CI 挂**。
+
+### 修法
+
+**所有 shell 脚本里，变量只要紧跟非 ASCII 字符，一律加花括号：**
+
+```bash
+# ❌ 错
+echo "预检通过（$TARGET_X）"
+echo "退出码 $RC。"
+
+# ✅ 对
+echo "预检通过（${TARGET_X}）"
+echo "退出码 ${RC}。"
+```
+
+本项目实际修了 3 处：
+  · `scripts/precheck-logos.sh`  —— `$TARGET_X）`
+  · `scripts/build.sh`           —— `$make_rc）`
+  · `.github/workflows/build.yml`—— `$RC。`
+
+### 自动检查
+
+写脚本时用这条命令扫一遍，找出 `$VAR` 紧贴非 ASCII 字符的位置：
+
+```bash
+# 找出所有「$VAR 后面紧跟非 ASCII 字符」且没加花括号的行
+grep -nP '\$[A-Za-z_]\w*[^\x00-\x7F]' scripts/*.sh .github/workflows/*.yml \
+  | grep -v '\${' || echo "无隐患"
+```
+
+### 附带的教训（比这个坑本身更重要）
+
+**诊断工具绝不能阻塞主流程。**
+
+当时我把 Logos 预检放在「编译两个 deb」**之前**，而且没忽略它的失败。
+结果预检脚本自己这个 `set -u` 的小问题，**把整个编译堵死了** ——
+编译根本没机会跑，我拿到的日志也只是预检的报错。
+
+现在的写法：
+
+```yaml
+- name: Logos 预检（诊断用，失败不阻塞编译）
+  continue-on-error: true          # ← 关键
+  run: |
+    ./scripts/precheck-logos.sh 2>&1 | tee -a /tmp/vcam-full-build.log || {
+      echo "::warning::Logos 预检未通过。编译仍会继续。"
+      exit 0
+    }
+```
+
+预检的输出同时写进 `/tmp/vcam-full-build.log`，
+这样即使它失败，日志也会随 `vcam-build-logs` 制品一起上传，方便事后诊断。
+

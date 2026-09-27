@@ -135,7 +135,7 @@ LATE=$(grep -nE '^#import' "$OUT" | awk -F: -v lim="$LIMIT" '$1 > lim {print $1}
 if [ -z "$LATE" ]; then
     echo "✅ [6/6] 所有 #import 都在前 $LIMIT 行内"
 else
-    echo "❌ [6/6] 有 #import 出现在文件后 3/4 处（行号：$LATE）"
+    echo "❌ [6/6] 有 #import 出现在文件后 3/4 处（行号：${LATE}）"
     grep -nE '^#import' "$OUT" | awk -F: -v lim="$LIMIT" '$1 > lim'
     FAIL=1
 fi
@@ -143,12 +143,16 @@ fi
 echo ""
 if [ "$FAIL" -eq 0 ]; then
     echo "==============================================================="
-    echo " ✅ 预检全部通过（$TARGET_X）"
+    # ⚠️ 变量必须写成 ${TARGET_X} 花括号形式。
+    #    之前写成 "…（$TARGET_X）" 这种形式（未加花括号），中文字符「（」紧贴变量，
+    #    bash 3.2 会把该多字节字符的首字节并进变量名，
+    #    在 set -u 下报：TARGET_X<字节>: unbound variable
+    echo " ✅ 预检全部通过：${TARGET_X}"
     echo "==============================================================="
     exit 0
 else
     echo "==============================================================="
-    echo " ❌ 预检失败，请按上面的提示修改 $TARGET_X"
+    echo " ❌ 预检失败，请按上面的提示修改：${TARGET_X}"
     echo "==============================================================="
     exit 1
 fi
