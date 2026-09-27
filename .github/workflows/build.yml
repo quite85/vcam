@@ -127,6 +127,15 @@ jobs:
           echo "layout 内容："
           find layout -type f
 
+      - name: Logos 预检（30 秒内暴露 Logos 类错误，不必等编译）
+        run: |
+          set -e
+          chmod +x scripts/precheck-logos.sh
+          # 这一步检查 Tweak.x 经过 Logos 之后生成代码的 6 项问题。
+          # 起因：曾经把 #import 写在 %hook 之后，Logos 把它塞进方法体，
+          #       logos.pl 退出码是 0，直到 clang 编译才报出很难懂的错。
+          ./scripts/precheck-logos.sh
+
       - name: 编译两个 deb
         id: builddeb
         run: |

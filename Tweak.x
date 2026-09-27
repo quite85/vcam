@@ -55,6 +55,14 @@
 #import "Mic/VCamMicInjector.h"
 #import "Media/VCamPhotoOutputInjector.h"
 #import "Media/VCamMovieFileInjector.h"
+// ⚠️ 所有 #import 必须集中在文件顶部、任何 %hook / %ctor 之前。
+//    原因：Logos 会把"不在 %hook 块里的代码"统一放进它生成的构造函数，
+//    如果 #import 出现在 %hook 之后，就会被塞进某个函数体，报这些错：
+//        Tweak.x:337: error: function definition is not allowed here
+//        VCamVolumeHook.h:29: error: redundant #include of module 'Foundation'
+//                             appears within function '...$hasFlash'
+//        VCamVolumeHook.h:33: error: unexpected '@' in program
+#import "UI/VCamVolumeHook.h"
 
 // ============================================================================
 #pragma mark - 公共：Hook 运行环境自检
@@ -333,10 +341,33 @@ static const void *kVCamSwizzledKey = &kVCamSwizzledKey;
     %orig;
 }
 
-- (BOOL)hasTorch { if ([VCamCore shared].active) return YES; return %orig; }
-- (BOOL)isTorchAvailable { if ([VCamCore shared].active) return YES; return %orig; }
-- (BOOL)hasFlash { if ([VCamCore shared].active) return YES; return %orig; }
-- (BOOL)isFlashAvailable { if ([VCamCore shared].active) return YES; return %orig; }
+// 注意：这几个方法刻意写成多行。
+// 原来写成单行 `- (BOOL)hasFlash { if (...) return YES; return %orig; }`，
+// 一旦文件里出现任何"被 Logos 拼到方法体内"的内容（例如误放在 %hook 之后的
+// #import），行号会刚好落在这里、报错信息很难看懂：
+//     Tweak.x:337:164: error: function definition is not allowed here
+//     VCamVolumeHook.h:29:1: error: ... appears within function
+//                             '_logos_method$...$hasFlash'
+// 多行写法之后，出问题时列号会直接指向出错的那一行。
+- (BOOL)hasTorch {
+    if ([VCamCore shared].active) return YES;
+    return %orig;
+}
+
+- (BOOL)isTorchAvailable {
+    if ([VCamCore shared].active) return YES;
+    return %orig;
+}
+
+- (BOOL)hasFlash {
+    if ([VCamCore shared].active) return YES;
+    return %orig;
+}
+
+- (BOOL)isFlashAvailable {
+    if ([VCamCore shared].active) return YES;
+    return %orig;
+}
 
 - (BOOL)setTorchModeOnWithLevel:(float)level error:(NSError **)outError {
     if ([VCamCore shared].active) return YES;   // 假成功
@@ -403,8 +434,7 @@ static const void *kVCamSwizzledKey = &kVCamSwizzledKey;
 // ============================================================================
 #pragma mark - 音量键拦截（音量减 → 悬浮小窗）
 // ============================================================================
-
-#import "UI/VCamVolumeHook.h"
+// VCamVolumeHook.h 的 import 已移到文件顶部的 import 区（原因见那里的注释）。
 
 // ============================================================================
 #pragma mark - 构造：按进程分流
