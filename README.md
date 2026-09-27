@@ -26,7 +26,8 @@
 8. [把自己域名做成 Sileo 源](#7-把自己域名做成-sileo-源)
 9. [常见故障排查](#8-常见故障排查)
 10. [已知限制](#9-已知限制)
-11. [免责声明](#10-免责声明)
+11. [编译报错排查（CI 首次编译踩过的坑）](Docs/BUILD_TROUBLESHOOTING.md)
+12. [免责声明](#10-免责声明)
 
 ---
 
@@ -955,6 +956,34 @@ VCam 不做对抗检测（这是设计选择，也符合需求里「不做针对
 
 ---
 
+## 10.5 编译报错排查
+
+首次在 GitHub Actions（macos-latest）上编译时，本项目实际踩过 3 个坑，
+每一个的**原始错误信息、根因、修法**都记在
+**[Docs/BUILD_TROUBLESHOOTING.md](Docs/BUILD_TROUBLESHOOTING.md)** 里：
+
+| # | 现象 | 根因 |
+| --- | --- | --- |
+| 1 | exit code 1，日志里没有编译输出 | Theos **不自带** iOS SDK，macOS 运行器上也没有 |
+| 2 | scheme_arg[@]: unbound variable | **bash 3.2**（macOS 自带）把空数组当未定义变量 |
+| 3 | -Wpointer-sign 编译错误 | 
+otify_register_check 的 out_token 是 int * 不是 uint32_t * |
+
+**日志大小是有用的信号**：
+
+| 日志大小 | 含义 |
+| --- | --- |
+| ~450 字节 | make 根本没跑起来 → 查 build.sh 自身 |
+| ~1 KB | make 跑了但立刻失败 → 缺 SDK / 工具链 |
+| > 4 KB | 进了真正的编译 → 看第一条 error: 即可 |
+
+工作流在编译失败时会自动上传 cam-build-logs 制品，
+在 Actions 那次运行的页面底部 Artifacts 区可以下载。
+
+另：Tweak.x 的 Logos 语法可以在 Windows 本地预检（不需要 iOS SDK，
+因为 Logos 是纯 perl 脚本），方法见同一份文档。
+
+---
 ## 10. 免责声明
 
 本插件用于：

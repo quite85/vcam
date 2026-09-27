@@ -48,6 +48,14 @@ export VCAM_PKG_ID     ?= com.quite85.vcam
 export VCAM_ENABLE_OBS ?= 1
 # 是否附带 PreferenceLoader 设置面板（默认关，主交互走音量键悬浮窗）
 export VCAM_BUILD_PREFS ?= 0
+# Logos 代码生成器。
+#   留空（默认）= MobileSubstrate 生成器，产物调用 MSHookMessageEx，
+#                会写入 .linker_option "-framework CydiaSubstrate"。
+#                Dopamine 的 ElleKit 自带该兼容层，这是经过最多验证的路径。
+#   internal   = 纯 Objective-C runtime 实现（class_replaceMethod /
+#                method_setImplementation），不依赖任何 hook 框架。
+#                链接期报找不到 CydiaSubstrate 时打开它。
+# export LOGOS_DEFAULT_GENERATOR = internal
 
 ifeq ($(THEOS),)
 $(error 未找到 THEOS。请先安装 Theos 并 export THEOS=/opt/theos)
