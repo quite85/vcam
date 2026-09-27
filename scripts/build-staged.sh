@@ -91,28 +91,44 @@ build_stage() {
     #   $THEOS/packages     Theos 默认产物目录
     #   $ROOT_DIR/packages  某些 Theos 版本/配置会输出到这里
     # 不清的话，下面的"找产物"逻辑会捡到上一轮的 deb。
+    # ⚠️ 只清 $THEOS/packages，**不要**清 $ROOT_DIR/packages。
+    #    后者是我们自己放阶梯产物的目录，清掉会把前面几个阶梯包一起删了
+    #    （踩过：三个阶梯跑完只剩最后一个）。
     rm -f "$THEOS"/packages/*.deb 2>/dev/null || true
-    rm -f "$ROOT_DIR"/packages/*.deb 2>/dev/null || true
 
     local log="/tmp/vcam-stage-$tag.log"
     # MAKEFLAGS=-k：继续编译其余文件，一次报出全部错误
+    # ⚠️ 必须显式传 VERSION=：Theos 的 `internal-package` 会用 VERSION 变量
+    #    覆盖 control 里的 Version 字段。只改 control 文件是没用的
+    #    （第一次写这个脚本时就踩了：三个阶梯包出来全是 2.0.0，
+    #      而且互相覆盖，因为包名相同、只有 control 里的版本不同）。
     if ! MAKEFLAGS=-k make package FINALPACKAGE=1 ARCHS=arm64 \
-              THEOS_PACKAGE_SCHEME=rootless > "$log" 2>&1; then
+              THEOS_PACKAGE_SCHEME=rootless \
+              VERSION="$version" > "$log" 2>&1; then
         echo "  ❌ 编译失败，详见 $log"
         grep -E 'error:|Error ' "$log" | head -8 | sed 's/^/      /'
         FAILED=$((FAILED + 1))
         return 1
     fi
 
-    # 产物收集：Theos 默认输出到 $THEOS/packages
+    # 产物收集：Theos 有时输出到 $THEOS/packages，有时输出到项目 packages/。
+    # 两个位置都找，但**必须按本轮版本号过滤** ——
+    # 否则会捡到前面阶梯留在项目 packages/ 里的包（踩过这个坑）。
     local src=""
-    for cand in "$THEOS"/packages/*.deb "$ROOT_DIR"/packages/*.deb; do
-        [ -e "$cand" ] || continue
-        src="$cand"
-        break
+    for dir in "$THEOS/packages" "$OUT_DIR"; do
+        [ -d "$dir" ] || continue
+        for cand in "$dir/${PKG_ID}_${version}_"*.deb; do
+            [ -e "$cand" ] || continue
+            src="$cand"
+            break
+        done
+        [ -n "$src" ] && break
     done
     if [ -z "$src" ]; then
-        echo "  ❌ 编译成功但找不到 deb"
+        echo "  ❌ 编译成功但找不到版本 $version 的 deb"
+        echo "     搜过的目录: $THEOS/packages  $OUT_DIR"
+        ls "$THEOS/packages" 2>/dev/null | sed "s/^/       theos: /"
+        ls "$OUT_DIR" 2>/dev/null | sed "s/^/       proj : /"
         FAILED=$((FAILED + 1))
         return 1
     fi
@@ -121,8 +137,11 @@ build_stage() {
     cp -f "$src" "$dest"
     echo "  ✅ 产出: $(basename "$dest")  ($(wc -c < "$dest" | tr -d ' ') 字节)"
 
-    # 清掉 Theos 原始命名的 deb，避免仓库里出现重复条目
-    rm -f "$THEOS"/packages/*.deb 2>/dev/null || true
+    # 把 Theos 原始命名的那份删掉（与 dest 同名则跳过），
+    # 避免 packages/ 里出现两份内容相同、名字不同的 deb。
+    if [ "$src" != "$dest" ]; then
+        rm -f "$src" 2>/dev/null || true
+    fi
 }
 
 build_stage "2.1.0" "filters/VCam-stageA.plist" "stageA"
