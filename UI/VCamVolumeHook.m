@@ -169,7 +169,11 @@ static NSString *const kVCamSystemVolumeReasonExplicit = @"ExplicitVolumeChange"
     // 但实测 OS 上报间隔 < 80ms，用固定延迟来区分长短按足够可靠。
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.28 * NSEC_PER_SEC)),
                    dispatch_get_main_queue(), ^{
-        float nowVol = self->_currentVolume;
+        // ⚠️ _currentVolume 是**方法**（- (float)_currentVolume），不是属性，
+        //    写成 self->_currentVolume 会报：
+        //        error: 'VCamVolumeHook' does not have a member named '_currentVolume'
+        //    必须用消息发送语法调用。
+        float nowVol = [self _currentVolume];
         // 如果这 280ms 内音量还在继续下降，说明用户在长按 → 不弹窗
         if (nowVol < self->_lastKnownVolume - 0.02f) {
             VCamLog(@"[vol] 判定为长按，放行系统音量调节");

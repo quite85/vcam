@@ -19,8 +19,22 @@ static const void *kVCamVirtualDimsKey = &kVCamVirtualDimsKey;
 static const void *kVCamSwizzledKey  = &kVCamSwizzledKey;
 static os_unfair_lock gInjectLock = OS_UNFAIR_LOCK_INIT;
 
-@implementation VCamPhotoOutputInjector
+// ---------------------------------------------------------------------------
+// 前向声明（必须放在所有 @implementation 之前）
+// ---------------------------------------------------------------------------
+// 下面两个方法定义在文件后部的 @implementation NSObject (VCamPhotoDelegate) 分类里，
+// 但本文件开头的两个 C 函数（vcam_photoDidFinish_2 / _4）会调用它们。
+// Objective-C 的方法调用不需要声明，但如果**完全不声明**，
+// clang 在 C 函数里遇到 [(id)self someMethod:] 会报：
+//     error: no known instance method for selector 'vcam_makePhotoFromJPEG:settings:'
+// 所以在最前面把「某个 NSObject 上有这些实例方法」告诉编译器。
+@interface NSObject (VCamPhotoDelegateForward)
+- (AVCapturePhoto *)vcam_makePhotoFromJPEG:(NSData *)jpeg
+                                  settings:(AVCaptureResolvedPhotoSettings *)resolved;
+- (BOOL)vcam_tryReplacePhoto:(AVCapturePhoto **)photoPtr;
+@end
 
+@implementation VCamPhotoOutputInjector
 + (void)install {
     static dispatch_once_t once;
     dispatch_once(&once, ^{
@@ -162,7 +176,14 @@ static void vcam_photoDidFinish_4(id self, SEL _cmd, AVCapturePhotoOutput *outpu
     }
     IMP original = method_getImplementation(m);
     const char *types = method_getTypeEncoding(m);
-    Class target = method_getClass(m) ?: cls;   // 方法定义在哪个类上
+    // ⚠️ 不要用 method_getClass(m)。
+    //    它**不是**公开的 objc/runtime.h API（头文件里没有声明），
+    //    clang 会隐式声明为返回 int，
+    //    于是 `method_getClass(m) ?: cls` 报：
+    //        error: incompatible operand types ('int' and 'Class')
+    //    而 class_getInstanceMethod 的实现就在 cls 自身，
+    //    直接对 cls 操作即可（class_addMethod/class_replaceMethod 作用于该类）。
+    Class target = cls;
 
     // 把原实现挂到 VCamOriginal_xxx 上
     class_addMethod(target, mangled, original, types);

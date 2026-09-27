@@ -164,6 +164,7 @@ jobs:
           COMMON="-fsyntax-only -fobjc-arc -x objective-c
                   -isysroot $SDK -miphoneos-version-min=15.0
                   -I. -ICore -IUI -IMedia -IMic
+                  -I$THEOS/vendor/include
                   -F$SDK/System/Library/Frameworks
                   -F$SDK/System/Library/PrivateFrameworks
                   -Wno-everything
