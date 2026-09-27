@@ -26,6 +26,20 @@ export TARGET       = iphone:clang:latest:15.0
 export PACKAGE_BUILDNAME = vcam
 
 # ---------------------------------------------------------------------------
+# 编译用 SDK 版本
+# ---------------------------------------------------------------------------
+# Theos **不自带** iOS SDK，它只在 $THEOS/sdks/ 和 Xcode 内部找。
+# GitHub 的 macOS 运行器上两处都没有 iPhoneOS SDK，
+# 所以 CI 必须先下载 SDK 到 $THEOS/sdks/，否则 make 会在 before-all 阶段
+# 直接报「You do not have any SDKs in ...」并以 exit 1 结束。
+#
+# 本机（macOS）开发时不要设这个变量：Theos 会 fallback 到 Xcode 自带的 SDK。
+# CI 里通过环境变量 VCAM_SDK_VERSION=16.5 指定，scripts/build.sh 会传进来。
+ifneq ($(VCAM_SDK_VERSION),)
+  export SDKVERSION = $(VCAM_SDK_VERSION)
+endif
+
+# ---------------------------------------------------------------------------
 # 用户可改的变量
 # ---------------------------------------------------------------------------
 # 反转域名。改这里的同时也要改 control / control-rootless 的 Package 行

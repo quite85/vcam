@@ -39,6 +39,11 @@ env:
   ORIGIN: VCam Repo
   LABEL: VCam Repo
   VCAM_ENABLE_OBS: ${{ github.event.inputs.enable_obs || '0' }}
+  # Theos 不自带 iOS SDK，macOS 运行器上也没有 iPhoneOS SDK。
+  # 必须显式指定一个我们下载到 $THEOS/sdks/ 的版本，否则 make 会
+  # 在 before-all 阶段报「You do not have any SDKs in ...」并 exit 1。
+  VCAM_SDK_VERSION: '16.5'
+  THEOS_SDKS_TAG: 'master-146e41f'   # theos/sdks 的 release 标签（官方预编译 SDK）
 
 permissions:
   contents: write
@@ -65,6 +70,26 @@ jobs:
           echo "$THEOS/bin" >> "$GITHUB_PATH"
           # ldid（签名 iOS 二进制必需）
           brew install ldid dpkg xz bzip2 || true
+
+      - name: 下载 iOS SDK 到 $THEOS/sdks（关键，缺这一步必定编译失败）
+        run: |
+          set -e
+          export THEOS="$HOME/theos"
+          mkdir -p "$THEOS/sdks"
+          SDK="iPhoneOS${VCAM_SDK_VERSION}.sdk"
+          URL="https://github.com/theos/sdks/releases/download/${THEOS_SDKS_TAG}/${SDK}.tar.xz"
+          echo "下载 $URL"
+          curl -fL --retry 3 -o /tmp/${SDK}.tar.xz "$URL"
+          tar -xJf /tmp/${SDK}.tar.xz -C "$THEOS/sdks"
+          # 校验
+          if [ ! -d "$THEOS/sdks/${SDK}" ]; then
+            echo "::error::SDK 解压后目录不存在：$THEOS/sdks/${SDK}"
+            ls -la "$THEOS/sdks"
+            exit 1
+          fi
+          echo "✅ 已安装 SDK："
+          ls -1 "$THEOS/sdks"
+          ls "$THEOS/sdks/${SDK}" | head -10
 
       - name: 安装 FFmpeg 头文件与静态库（可选）
         if: env.VCAM_ENABLE_OBS == '1'
@@ -103,18 +128,38 @@ jobs:
           find layout -type f
 
       - name: 编译两个 deb
+        id: builddeb
         run: |
-          set -e
+          set +e
           chmod +x scripts/build.sh
-          ./scripts/build.sh
+          ./scripts/build.sh 2>&1 | tee /tmp/vcam-full-build.log
+          RC=${PIPESTATUS[0]}
+          echo "build.sh 退出码 = $RC" | tee -a /tmp/vcam-full-build.log
+          # 把每个变体的日志也收进统一文件，方便失败时下载排查
+          for f in /tmp/vcam-build-rootful.log /tmp/vcam-build-rootless.log; do
+            [ -f "$f" ] && { echo "" >> /tmp/vcam-full-build.log; cat "$f" >> /tmp/vcam-full-build.log; }
+          done
+          if [ $RC -ne 0 ]; then
+            echo "::error::编译失败，退出码 $RC。完整日志见 artifact: vcam-build-logs"
+            exit $RC
+          fi
           echo "--- 产物 ---"
           ls -lh packages/
-          echo "--- 抽查 deb 内容（确认 filter 与中文字段）---"
+          echo "--- 抽查 deb 内容（确认 filter、路径、中文字段）---"
           for d in packages/*.deb; do
             echo "== $d"
             dpkg-deb -c "$d" | grep -i mobileSubstrate || true
             dpkg-deb -f "$d" Package Version Architecture Depends || true
           done
+
+      - name: 上传编译日志（仅失败时）
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vcam-build-logs
+          path: /tmp/vcam-full-build.log
+          if-no-files-found: warn
+          retention-days: 7
 
       - name: 生成 APT 源
         run: |

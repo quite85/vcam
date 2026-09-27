@@ -23,6 +23,9 @@ cd "$ROOT_DIR"
 PKG_ID="${VCAM_PKG_ID:-com.quite85.vcam}"
 ENABLE_OBS="${VCAM_ENABLE_OBS:-1}"
 ONLY="${ONLY:-all}"
+# 编译用 SDK 版本。留空 = 让 Theos 用 Xcode 自带的 SDK（macOS 本机开发）。
+# CI 上必须显式指定，因为运行器上没有 iPhoneOS SDK。
+SDK_VERSION="${VCAM_SDK_VERSION:-}"
 
 # ---- 环境检查 ----
 if [ -z "${THEOS:-}" ]; then
@@ -38,6 +41,21 @@ if [ -z "${THEOS:-}" ] || [ ! -d "$THEOS/makefiles" ]; then
     exit 1
 fi
 echo "✅ THEOS = $THEOS"
+
+# ---- SDK 检查（CI 上最容易踩的坑）----
+if [ -n "$SDK_VERSION" ]; then
+    export VCAM_SDK_VERSION="$SDK_VERSION"
+    if [ ! -d "$THEOS/sdks/iPhoneOS${SDK_VERSION}.sdk" ]; then
+        echo "❌ 找不到 SDK: $THEOS/sdks/iPhoneOS${SDK_VERSION}.sdk" >&2
+        echo "   请下载并解压：" >&2
+        echo "     curl -L -o /tmp/sdk.tar.xz https://github.com/theos/sdks/releases/download/master-146e41f/iPhoneOS${SDK_VERSION}.sdk.tar.xz" >&2
+        echo "     mkdir -p \"\$THEOS/sdks\" && tar -xJf /tmp/sdk.tar.xz -C \"\$THEOS/sdks\"" >&2
+        exit 1
+    fi
+    echo "✅ SDK = $THEOS/sdks/iPhoneOS${SDK_VERSION}.sdk  (SDKVERSION=$SDK_VERSION)"
+else
+    echo "ℹ️  未指定 VCAM_SDK_VERSION，将由 Theos 自行选择 SDK（需要 Xcode 自带 iOS SDK）"
+fi
 
 if ! command -v dpkg-deb >/dev/null 2>&1; then
     echo "⚠️  未找到 dpkg-deb；Debian/Ubuntu 上装 dpkg-dev，macOS 上装 dpkg（brew install dpkg）" >&2
