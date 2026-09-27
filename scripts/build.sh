@@ -88,10 +88,6 @@ trap restore_control EXIT INT TERM
 build_one() {
     local scheme="$1"
     local tag="$2"
-    local -a scheme_arg=()
-    if [ -n "$scheme" ]; then
-        scheme_arg=(THEOS_PACKAGE_SCHEME="$scheme")
-    fi
 
     echo ""
     echo "=============================================================="
@@ -106,11 +102,32 @@ build_one() {
     fi
 
     make clean >/dev/null 2>&1 || true
+
     # 每次切换 scheme 都要重新编译：rootless 会改变安装路径前缀
-    make package FINALPACKAGE=1 \
-         VCAM_ENABLE_OBS="$ENABLE_OBS" \
-         "${scheme_arg[@]}" \
-         2>&1 | tee "/tmp/vcam-build-$tag.log"
+    #
+    # ⚠️ 这里刻意不用数组传 THEOS_PACKAGE_SCHEME。
+    #    原因：新版 bash（4.4+ / macOS 上 brew 装的）在 `set -u` 下
+    #    安全展开空数组 `"${arr[@]}"`，但 **macOS 自带的 bash 3.2**
+    #    会把空数组当成未定义变量，直接报
+    #        line 110: scheme_arg[@]: unbound variable
+    #    并 exit 1。GitHub 的 macos-latest 运行器用的正是 bash 3.2，
+    #    所以这里改成条件拼接参数，兼容所有 bash 版本。
+    if [ -n "$scheme" ]; then
+        make package FINALPACKAGE=1 \
+             VCAM_ENABLE_OBS="$ENABLE_OBS" \
+             THEOS_PACKAGE_SCHEME="$scheme" \
+             2>&1 | tee "/tmp/vcam-build-$tag.log"
+        local make_rc=${PIPESTATUS[0]}
+    else
+        make package FINALPACKAGE=1 \
+             VCAM_ENABLE_OBS="$ENABLE_OBS" \
+             2>&1 | tee "/tmp/vcam-build-$tag.log"
+        local make_rc=${PIPESTATUS[0]}
+    fi
+    if [ "$make_rc" -ne 0 ]; then
+        echo "❌ make package 失败（退出码 $make_rc），详见 /tmp/vcam-build-$tag.log"
+        return "$make_rc"
+    fi
 
     # 取最新生成的 deb
     local src
