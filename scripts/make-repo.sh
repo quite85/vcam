@@ -261,13 +261,50 @@ echo "➡️  生成 Release …"
     done
 } > Release
 
-# ---- 6) 清理 Theos 原始名字的重复 deb（避免用户装到没有架构标记的包）----
-# 只保留带 -rootful / -rootless 后缀的
-find "$REPO_DIR/debs" -maxdepth 1 -name '*.deb' ! -name '*-rootful.deb' ! -name '*-rootless.deb' -print0 2>/dev/null |
-while IFS= read -r -d '' f; do
-    echo "  - 移除无架构标记的重复包: $(basename "$f")"
-    rm -f "$f"
-done || true
+# ---- 6) 清理"没有变体后缀"的重复 deb ----
+#
+# ⚠️ 这里曾把新命名的包全删光（v1.0.1 的 bug，导致线上 repo/debs 为空、所有 Filename 404）。
+#    当时是所有变体打完后在同一个 debs/ 里，用 find 的否定表达式筛掉
+#    "-rootful.deb" / "-rootless.deb" 结尾之外的一切：
+#        find debs -name '*.deb' ! -name '*-rootful.deb' ! -name '*-rootless.deb'
+#   而 v1.0.1 起文件名是
+#        <pkgid>_<ver>_iphoneos-arm64-rootless-safe.deb
+#        <pkgid>_<ver>_iphoneos-arm64-rootless-full.deb
+#   它们都不以 "-rootless.deb" 结尾，于是被判定为"无架构标记的重复包"而删除。
+#
+#    现在改成**只删本包前缀、且没有变体后缀**的文件，白名单式判断，
+#    绝不会碰到 -safe / -full 的正常产物。
+PKG_ID="${PKG_ID:-com.quite85.virtualcamera}"
+REMOVED=0
+for f in "$DEBS_DIR"/*.deb; do
+    [ -e "$f" ] || continue
+    b="$(basename "$f")"
+    case "$b" in
+        "${PKG_ID}"_*-safe.deb|"${PKG_ID}"_*-full.deb)
+            : ;;                                  # 正常命名，保留
+        "${PKG_ID}"_*.deb)
+            echo "  - 移除无变体后缀的重复包: $b"
+            rm -f "$f"
+            REMOVED=$((REMOVED + 1))
+            ;;
+        *)
+            echo "  - 移除非本包的 deb: $b"
+            rm -f "$f"
+            REMOVED=$((REMOVED + 1))
+            ;;
+    esac
+done
+[ "$REMOVED" -eq 0 ] && echo "  （无需清理，命名均规范）"
+
+echo ""
+echo "  最终 debs/ 内容："
+ls -lh "$DEBS_DIR" 2>/dev/null | tail -n +2 | awk '{print "   " $9, "(" $5 ")"}'
+FINAL_COUNT=$(ls -1 "$DEBS_DIR"/*.deb 2>/dev/null | wc -l | tr -d ' ')
+echo "  共 $FINAL_COUNT 个 deb"
+if [ "$FINAL_COUNT" -eq 0 ]; then
+    echo "❌ debs/ 为空 —— Packages 里的 Filename 会全部 404，请检查上面被删的文件" >&2
+    exit 1
+fi
 
 echo ""
 echo "=============================================================="
