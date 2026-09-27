@@ -1,0 +1,95 @@
+name: 诊断构建（Stage1 / Ping）
+
+# 目的：只构建用于定位黑屏问题的**诊断包**，不发布、不覆盖正式源。
+#
+# 为什么单独一个 workflow：
+#   正式发布走 build.yml（带 tag、建 Release、部署 Pages）。
+#   诊断包只需要 deb 产物，用独立 workflow 可以避免
+#   污染正式版本、也不会把测试包推给用户。
+#
+# 为什么在 CI 而不是本地构建：
+#   WSL 上的 Ubuntu clang 21 + 开源 SDK 组合在几个点上与 Apple 工具链不同
+#   （arm64e 重定位、mach_time 模块化、部分 VT/Audio 常量），
+#   本地编不出完整 tweak。CI 用 Apple clang + 完整 SDK，没有这些问题。
+#
+# 触发方式：手动（Actions → 诊断构建 → Run workflow），或 push 到 main
+#           且改动了 experiments/ 下的文件。
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'experiments/**'
+      - '.github/workflows/diagnostic.yml'
+
+jobs:
+  stage1:
+    name: 构建 Stage1 诊断包
+    runs-on: macos-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Theos
+        run: |
+          set -e
+          export THEOS="$HOME/theos"
+          if [ ! -d "$THEOS" ]; then
+            git clone --recursive --depth 1 https://github.com/theos/theos.git "$THEOS"
+          fi
+          echo "THEOS=$THEOS" >> "$GITHUB_ENV"
+          echo "$THEOS/bin" >> "$GITHUB_PATH"
+
+      - name: 安装 ldid
+        run: |
+          brew install ldid 2>/dev/null || true
+          which ldid || echo "ldid 不可用（macOS 上有自带的 codesign 兜底）"
+
+      - name: 构建 Stage1
+        run: |
+          set -e
+          cd experiments/stage1
+          export THEOS="$HOME/theos"
+          export PATH="$THEOS/bin:$PATH"
+          echo "=== 构建参数 ==="
+          echo "  TWEAK_NAME = $(grep '^TWEAK_NAME' Makefile | awk '{print $3}')"
+          echo "  filter     = $(cat VirtualCamera.plist | tr -d '\n ')"
+          echo ""
+          make package FINALPACKAGE=1 ARCHS=arm64 THEOS_PACKAGE_SCHEME=rootless 2>&1 | tail -40
+          echo ""
+          echo "=== 产物 ==="
+          ls -lh packages/*.deb 2>/dev/null || ls -lh "$THEOS"/packages/*.deb
+
+      - name: 校验产物内容
+        run: |
+          set -e
+          cd experiments/stage1
+          D=$(ls -t packages/*.deb "$THEOS"/packages/*.deb 2>/dev/null | head -1)
+          echo "deb: $D"
+          echo ""
+          echo "=== 安装的文件 ==="
+          dpkg-deb -c "$D" 2>/dev/null | awk '{print "  " $6}' | grep -v '/$'
+          echo ""
+          echo "=== dylib 架构 ==="
+          T=$(mktemp -d); dpkg-deb -x "$D" "$T" 2>/dev/null
+          find "$T" -name '*.dylib' -exec file {} \;
+          echo ""
+          echo "=== filter 内容 ==="
+          find "$T" -name '*.plist' -exec sh -c 'echo "  [$1]"; cat "$1" | sed "s/^/    /"' _ {} \;
+          echo ""
+          echo "=== 检查是否含 mediaserverd 注入（应为空 filter 或不存在）==="
+          if find "$T" -name 'VCam-mediaserverd.plist' | grep -q .; then
+            echo "  ⚠️ 含 mediaserverd filter —— Stage1 不该有"
+          else
+            echo "  ✅ 不含 mediaserverd filter（符合预期）"
+          fi
+          rm -rf "$T"
+
+      - name: 上传诊断包
+        uses: actions/upload-artifact@v4
+        with:
+          name: vcam-diagnostic-stage1
+          path: experiments/stage1/packages/*.deb
+          if-no-files-found: warn
+          retention-days: 30

@@ -6,11 +6,6 @@
 #import "VCamFrameSource.h"
 #import "VCamConfig.h"
 #import <os/lock.h>
-// mach_absolute_time() 声明在此头文件里。
-// 不导入会报（新版 clang 默认把隐式函数声明当错误）：
-//     error: call to undeclared function 'mach_absolute_time';
-//            ISO C99 and later do not support implicit function declarations
-#import <mach/mach_time.h>
 
 @implementation VCamFrameSourceBase {
     uint64_t _lastEmitHostTime;

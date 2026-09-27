@@ -8,16 +8,6 @@
 #import <os/lock.h>
 #import <pthread.h>
 
-// 把只读属性在本文件内开放为可写。
-// 头文件里 lastError 声明为 readonly，但本实现内部需要 self.lastError = ... 赋值。
-// 不加这个类扩展会报：
-//     error: assignment to readonly property
-// （readonly 属性会自动合成 getter 与 _lastError ivar，但没有 setter；
-//  在类扩展里重新声明为 readwrite 即可获得 setter。）
-@interface VCamTSDemuxer ()
-@property (nonatomic, readwrite, copy, nullable) NSString *lastError;
-@end
-
 #if VCAM_ENABLE_OBS
 #include <libavformat/avformat.h>
 #include <libavcodec/avcodec.h>

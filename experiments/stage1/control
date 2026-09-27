@@ -1,0 +1,19 @@
+Package: com.quite85.vcamstage1
+Name: VirtualCamera 测试 Stage1 (只注入设置)
+Version: 1.0.0
+Architecture: iphoneos-arm64
+Description: VCam 诊断构建 Stage 1 —— 逐步定位黑屏原因。
+ 本阶段特征：
+ · tweak 名改为 VirtualCamera（避免与旧插件 VCam.dylib/VCam.plist 同名冲突）
+ · filter 只列 com.apple.Preferences（设置 App）
+ · 不注入 SpringBoard、不注入 mediaserverd 等系统守护进程
+ 用途：验证"我们的 dylib 与 App 层 hook 本身是否安全"。
+ 风险极小：即使有问题也只是设置 App 打不开，不会黑屏。
+ .
+ 日志：/var/mobile/Library/VirtualCamera/virtualcamera.log
+Homepage: https://github.com/quite85/vcam
+Maintainer: quite85 <quite85@users.noreply.github.com>
+Author: quite85 <quite85@users.noreply.github.com>
+Section: Tweaks
+Depends: firmware (>= 15.0), mobilesubstrate | ellekit
+Tag: purpose::extension, role::hacker
