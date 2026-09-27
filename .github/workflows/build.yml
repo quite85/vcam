@@ -272,10 +272,39 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
+      - name: 构建 Stage1 诊断包（零 hook，供 Sileo 源直接安装）
+        run: |
+          set +e
+          # 为什么把诊断包也放进正式源：
+          #   用户在手机上装 deb 很麻烦（需要 Filza 或用 Sileo 打开共享菜单），
+          #   放进源里就能像普通插件一样点安装。
+          #   Stage1 是**零 hook** 的最小注入验证包（只写一行日志、
+          #   filter 只列设置 App），风险极小，适合放在源里供排查使用。
+          #
+          # ⚠️ 必须复制到 **packages/**，不能直接放 repo/debs/。
+          #    因为 make-repo.sh 第 1 步会先 `rm -f debs/*.deb` 再从 packages/
+          #    全量拷贝 —— 直接放 debs/ 的会被清掉。
+          echo "=== 构建 Stage1 ==="
+          cd experiments/stage1
+          make package FINALPACKAGE=1 ARCHS=arm64 THEOS_PACKAGE_SCHEME=rootless 2>&1 | tail -12
+          echo ""
+          D=$(ls -t packages/*.deb 2>/dev/null | head -1)
+          if [ -z "$D" ]; then
+            echo "::warning::Stage1 构建失败，跳过（不影响正式包）"
+            exit 0
+          fi
+          echo "  Stage1 产物: $D"
+          cp -f "$D" "$GITHUB_WORKSPACE/packages/"
+          echo "  packages/ 内容（将被 make-repo.sh 扫进源）："
+          ls -la "$GITHUB_WORKSPACE/packages/" | sed 's/^/    /'
+          exit 0
+
       - name: 生成 APT 源
         run: |
           set -e
           chmod +x scripts/make-repo.sh
+          echo "=== 生成前：packages/ 里的包 ==="
+          ls -la packages/ 2>/dev/null || echo "  （空）"
           DOMAIN="${{ env.DOMAIN }}" REPO_PATH="${{ env.REPO_PATH }}" \
             ./scripts/make-repo.sh
           echo "--- Packages/GitHub Pages 内容 ---"

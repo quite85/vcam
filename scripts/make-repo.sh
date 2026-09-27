@@ -326,11 +326,32 @@ echo "➡️  生成 Release …"
 #
 #    现在改成**只删本包前缀、且没有变体后缀**的文件，白名单式判断，
 #    绝不会碰到 -safe / -full 的正常产物。
+#
+#    另外要**保留诊断包**（com.quite85.vcamping / com.quite85.vcamstage1）。
+#    它们不符合 <pkgid>_*-safe.deb / -full.deb 的命名，如果按下面的
+#    默认分支处理会被当成"非本包的 deb"删掉 —— 而正式流程现在会把
+#    Stage1 一并放进 packages/ 以便出现在 Sileo 源里，所以必须放行。
 PKG_ID="${PKG_ID:-com.quite85.virtualcamera}"
+KEEP_PREFIXES="com.quite85.vcamping com.quite85.vcamstage1"
 REMOVED=0
+KEPT_DIAG=0
 for f in "$DEBS_DIR"/*.deb; do
     [ -e "$f" ] || continue
     b="$(basename "$f")"
+
+    # 先看是否属于要保留的诊断包前缀
+    is_diag=0
+    for kp in $KEEP_PREFIXES; do
+        case "$b" in
+            "${kp}"_*) is_diag=1 ;;
+        esac
+    done
+    if [ "$is_diag" -eq 1 ]; then
+        echo "  · 保留诊断包: $b"
+        KEPT_DIAG=$((KEPT_DIAG + 1))
+        continue
+    fi
+
     case "$b" in
         "${PKG_ID}"_*-safe.deb|"${PKG_ID}"_*-full.deb)
             : ;;                                  # 正常命名，保留
@@ -347,6 +368,7 @@ for f in "$DEBS_DIR"/*.deb; do
     esac
 done
 [ "$REMOVED" -eq 0 ] && echo "  （无需清理，命名均规范）"
+[ "$KEPT_DIAG" -gt 0 ] && echo "  （保留 $KEPT_DIAG 个诊断包）"
 
 echo ""
 echo "  最终 debs/ 内容："
