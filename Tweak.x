@@ -65,8 +65,198 @@
 #import "UI/VCamVolumeHook.h"
 
 // ============================================================================
-#pragma mark - 公共：Hook 运行环境自检
+#pragma mark - 崩溃保护：让任何一步失败都不会拖死进程
 // ============================================================================
+//
+// ⚠️ 为什么必须有这一段（v1.0.0 / v1.0.1 的**黑屏事故**）：
+//
+//   原来的 %ctor 是"裸奔"的：
+//       %ctor {
+//           [[VCamCore shared] observeStateIfNeeded];
+//           if (VCamIsSpringBoardProcess()) {
+//               [VCamVolumeHook install];
+//               [[VCamPanel shared] prepare];
+//               return;
+//           }
+//           %init;
+//           [VCamPhotoOutputInjector install];
+//           ...
+//       }
+//
+//   四个 install 里任何一个抛 Objective-C 异常（或访问了非法内存），
+//   **进程当场崩溃**。而 filter 里包含 SpringBoard ——
+//   SpringBoard 在构造阶段崩溃 = 崩溃重启循环 = **整机黑屏**。
+//
+//   注入类插件有一条铁律：**构造阶段绝不能抛异常**。
+//   因为此时进程还没起来，用户既看不到界面也来不及卸载。
+//
+//   现在的做法：
+//     1) 每一步都包在 @try/@catch 里，失败只记录、不抛出；
+//     2) 每步执行前先在状态文件里留"正在执行第 N 步"的标记，
+//        成功后清除。若某步执行到一半进程就崩了，标记会残留，
+//        **下次启动直接跳过这一步** —— 于是不会陷入无限崩溃循环；
+//     3) 如果连续多次启动都有残留标记，进入"紧急停止"：
+//        本次完全不注入，保证设备能正常开机。
+//
+//   这样即使我的某个 hook 在真机上有问题，最坏结果也只是
+//   "某个功能不生效"，而不是黑屏。
+
+/// 安全执行一个代码块：捕获所有 Objective-C 异常与 C++ 异常
+static BOOL VCamGuarded(NSString *stage, void (^block)(void)) {
+    @try {
+        block();
+        return YES;
+    } @catch (NSException *e) {
+        VCamLog(@"[guard] 步骤 %@ 抛出异常，已忽略: %@ — %@",
+                stage, e.name, e.reason);
+        [[VCamStateStore shared] recordError:
+            [NSString stringWithFormat:@"%@ 异常: %@", stage, e.reason ?: e.name]];
+        return NO;
+    } @catch (...) {
+        VCamLog(@"[guard] 步骤 %@ 抛出未知异常，已忽略", stage);
+        [[VCamStateStore shared] recordError:
+            [NSString stringWithFormat:@"%@ 未知异常", stage]];
+        return NO;
+    }
+}
+
+/// 状态文件里记录"正在执行哪个阶段"，用于识别"执行到一半就崩了"
+static NSString *const kVCamStageKey   = @"ctorStage";
+static NSString *const kVCamCrashKey   = @"ctorCrashCount";
+
+/// 读取上一次启动残留的阶段标记（非 nil 说明上次是崩在这一步）
+static NSString *VCamPendingStage(void) {
+    id v = [[VCamStateStore shared] raw][kVCamStageKey];
+    return [v isKindOfClass:NSString.class] ? v : nil;
+}
+
+static NSInteger VCamCrashCount(void) {
+    id v = [[VCamStateStore shared] raw][kVCamCrashKey];
+    return [v respondsToSelector:@selector(integerValue)] ? [v integerValue] : 0;
+}
+
+/// 标记"即将执行某阶段"
+static void VCamBeginStage(NSString *stage) {
+    [[VCamStateStore shared] update:^(NSMutableDictionary *d) {
+        d[kVCamStageKey] = stage;
+        NSInteger c = [d[kVCamCrashKey] integerValue] + 1;
+        d[kVCamCrashKey] = @(c);
+    }];
+}
+
+/// 标记"某阶段已成功完成"
+static void VCamFinishStage(void) {
+    [[VCamStateStore shared] update:^(NSMutableDictionary *d) {
+        [d removeObjectForKey:kVCamStageKey];
+        d[kVCamCrashKey] = @0;
+    }];
+}
+
+/// 执行一个带保护的阶段。若上次崩在同名阶段，本次直接跳过。
+///   返回 YES = 真的执行了；NO = 跳过了（上次崩在这 / 超出分级预算 / 出异常）。
+///
+/// 分级调试：gStageBudget 由 %ctor 在开头用 VCamSetStageBudget() 设置。
+/// 每调用一次本函数，gStageUsed 递增；超出预算的阶段会被跳过，
+/// 用来实现"每次启动只多放行一步"。
+static NSInteger gStageBudget = NSIntegerMax;
+static NSInteger gStageUsed = 0;
+
+static void VCamSetStageBudget(NSInteger budget) {
+    gStageBudget = budget;
+    gStageUsed = 0;
+}
+
+static BOOL VCamRunStage(NSString *stage, void (^block)(void)) {
+    gStageUsed += 1;
+    if (gStageUsed > gStageBudget) {
+        VCamLog(@"[staged] 本次启动只放行到第 %ld 步，跳过阶段「%@」",
+                (long)gStageBudget, stage);
+        return NO;
+    }
+    if ([VCamPendingStage() isEqualToString:stage]) {
+        VCamLog(@"[guard] 上次启动崩在阶段「%@」，本次跳过它（保持系统可用）", stage);
+        [[VCamStateStore shared] recordError:
+            [NSString stringWithFormat:@"已自动跳过曾导致崩溃的阶段: %@", stage]];
+        // 清掉标记，让后面的阶段能继续尝试
+        [[VCamStateStore shared] update:^(NSMutableDictionary *d) {
+            [d removeObjectForKey:kVCamStageKey];
+        }];
+        return NO;
+    }
+    VCamBeginStage(stage);
+    BOOL ok = VCamGuarded(stage, block);
+    VCamFinishStage();
+    return ok;
+}
+
+/// 紧急停止阈值：连续这么多次启动都留下残留标记 → 停止注入
+static const NSInteger kVCamEmergencyStopCount = 3;
+
+// ============================================================================
+#pragma mark - 分级调试模式（定位"到底哪一步把设备搞崩"）
+// ============================================================================
+//
+// 背景：v1.0.0 / v1.0.1 装上都黑屏，但**无法定位是哪一步导致的** ——
+//       因为所有注入在第一次启动时就全做了，崩了就什么都没有了。
+//
+// 做法：给每个进程维护一个"启动计数"，本次启动**只放行前 N 步**注入，
+//       N 随启动次数递增：
+//          第 1 次启动 → 什么注入都不做（只写日志）
+//          第 2 次      → 只做第 1 步
+//          第 3 次      → 前 2 步
+//          …
+//       这样：
+//         · 某次启动后黑屏 → 崩的就是"本次新增的那一步"，一步定位
+//         · 上一步验证过没问题，再往下走，风险可控
+//         · 每次重启只前进一小步，最坏情况也只是"多几次重启"
+//
+// 开关：环境变量 VCAM_SAFE_LAUNCHES
+//        未设置（默认）→ 完整注入（正常使用）
+//        = 1          → 分级模式，每启动一次多放行一步
+//        = 0          → 与未设置相同
+//
+// 用法（SSH 或 NewTerm 里执行，然后重启对应进程/重启手机）：
+//        launchctl setenv VCAM_SAFE_LAUNCHES 1
+//        killall -9 SpringBoard
+//     观察是否黑屏，再看日志末尾：
+//        tail -5 /var/mobile/Library/VirtualCamera/virtualcamera.log
+//     日志会明确写出"本次放行到第 N 步 / 共 M 步"。
+//
+// 关闭分级模式（恢复正常使用）：
+//        launchctl unsetenv VCAM_SAFE_LAUNCHES
+//        killall -9 SpringBoard
+
+/// 本次应放行的阶段数。返回 -1 表示"不限制"（正常模式）
+static NSInteger VCamAllowedStageCount(void) {
+    const char *env = getenv("VCAM_SAFE_LAUNCHES");
+    if (!env || !*env) return -1;
+    if (atoi(env) == 0) return -1;
+    return 1;   // 仅用于"是否启用分级模式"的判断，实际步数由计数器决定
+}
+
+static BOOL VCamStagedModeEnabled(void) {
+    return VCamAllowedStageCount() > 0;
+}
+
+/// 分进程维护启动计数，返回本次应放行的步数
+static NSInteger VCamCurrentAllowedStages(void) {
+    if (!VCamStagedModeEnabled()) return NSIntegerMax;
+
+    NSString *proc = VCamCurrentProcessName() ?: @"unknown";
+    NSString *path = [VCamStateDirectory() stringByAppendingPathComponent:
+                        [NSString stringWithFormat:@"launches-%@.txt", proc]];
+
+    NSInteger n = 0;
+    NSString *prev = [NSString stringWithContentsOfFile:path
+                                               encoding:NSUTF8StringEncoding
+                                                  error:NULL];
+    if (prev.length) n = [prev integerValue];
+    n += 1;
+
+    [@(n).stringValue writeToFile:path atomically:YES
+                         encoding:NSUTF8StringEncoding error:NULL];
+    return n;
+}
 
 /// 把 VCam 的失败信息写进状态文件，UI 上能看到（用户排查必备）
 static void VCamReportFailure(NSString *where, NSString *reason) {
@@ -441,43 +631,110 @@ static const void *kVCamSwizzledKey = &kVCamSwizzledKey;
 // ============================================================================
 
 %ctor {
+    // ⚠️ 整个构造过程分阶段执行，每一步都由 VCamRunStage 包裹：
+    //    · 抛异常 → 只记录，进程继续活着
+    //    · 上次崩在这一步 → 本次跳过这一步
+    //    · 连续多次留下残留标记 → 紧急停止，本进程完全不注入
+    //    详见文件上方"崩溃保护"那一大段注释。
     @autoreleasepool {
         NSString *proc = VCamCurrentProcessName();
         VCamLog(@"=========== 虚拟摄像头 加载到 %@ (pid %d) ===========", proc, getpid());
 
-        // 1) 所有进程都需要状态监听
-        [[VCamCore shared] observeStateIfNeeded];
-
-        if (VCamIsMediaServerProcess()) {
-            // ---- mediaserverd：系统级注入 ----
-            VCamMediaserverdWatchdog();
-            int hooked = VCamHookMediaServerdSymbols();
-            VCamLog(@"[ctor] mediaserverd 层 hook 数量 = %d", hooked);
-            // 音频：麦克风采集替换（这一层是"系统级虚拟麦"的关键）
-            [[VCamMicInjector shared] installForMediaServer];
-            // 不需要 UI
+        // ---- 0) 紧急停止检查 ----
+        // 状态文件里 ctorCrashCount 会随每次 BeginStage 递增、成功 FinishStage 归零。
+        // 若它偏大，说明多次启动都在注入过程中崩掉 —— 此时绝不能再注入，
+        // 否则设备会陷入"开机即崩"的循环（表现为黑屏）。
+        NSInteger crashes = VCamCrashCount();
+        if (crashes >= kVCamEmergencyStopCount) {
+            VCamLog(@"[guard] ⛔️ 检测到连续 %ld 次注入过程异常，本次**完全跳过注入**以保证设备可用",
+                    (long)crashes);
+            VCamLog(@"[guard] 请在设置面板或状态文件里检查 lastError 后，"
+                    @"删除 /var/mobile/Library/VirtualCamera/state.plist 重试");
             return;
         }
 
+        // ---- 0) 救砖开关：safe 文件存在 → 本进程完全不注入 ----
+        //
+        // 这是给"装上之后黑屏、但不想再走一遍强制重启+安全模式"准备的。
+        //
+        // 只要这个文件存在，所有进程都只写一行日志、不做任何 hook：
+        //     /var/mobile/Library/VirtualCamera/safe
+        //
+        // 怎么在没越狱的情况下创建它？——用 Filza（越狱 App 本身往往还能开），
+        // 或者连电脑用 ifuse/iMazing 往 App 沙盒写。都不行就还是走安全模式。
+        //
+        // 恢复使用：删掉这个文件即可。
+        NSString *safeFlag = [VCamStateDirectory() stringByAppendingPathComponent:@"safe"];
+        if ([NSFileManager.defaultManager fileExistsAtPath:safeFlag]) {
+            VCamLog(@"⛔️ 检测到救砖开关 %@，本次**完全不注入**（删除该文件即可恢复）",
+                    safeFlag);
+            return;
+        }
+
+        // ---- 0.5) 分级调试预算 ----
+        // 正常模式（未设 VCAM_SAFE_LAUNCHES）→ 不限步数，完整注入。
+        // 分级模式 → 本次启动只放行前 N 步，N 随启动次数递增。
+        NSInteger allowed = VCamCurrentAllowedStages();
+        VCamSetStageBudget(allowed);
+        if (allowed != NSIntegerMax) {
+            VCamLog(@"[staged] ⚠️ 分级调试模式：进程 %@ 第 %ld 次启动，"
+                    @"本次只放行前 %ld 步注入（共 5~6 步）",
+                    proc, (long)allowed, (long)allowed);
+        }
+
+        // ---- 1) 状态监听（所有进程都要，且必须最先做）----
+        VCamRunStage(@"observeState", ^{
+            [[VCamCore shared] observeStateIfNeeded];
+        });
+
+        // ---- 2) mediaserverd / 系统守护进程 ----
+        if (VCamIsMediaServerProcess()) {
+            VCamRunStage(@"msdWatchdog", ^{
+                VCamMediaserverdWatchdog();
+            });
+            VCamRunStage(@"msdHook", ^{
+                int hooked = VCamHookMediaServerdSymbols();
+                VCamLog(@"[ctor] mediaserverd 层 hook 数量 = %d", hooked);
+            });
+            VCamRunStage(@"msdMic", ^{
+                [[VCamMicInjector shared] installForMediaServer];
+            });
+            return;   // 系统守护进程不需要 App 层与 UI
+        }
+
+        // ---- 3) SpringBoard：只做 UI 与音量键，**绝不碰相机管线** ----
         if (VCamIsSpringBoardProcess()) {
-            // ---- SpringBoard：只做 UI 与音量键 ----
-            [VCamVolumeHook install];
-            [[VCamPanel shared] prepare];
+            VCamRunStage(@"sbVolumeHook", ^{
+                [VCamVolumeHook install];
+            });
+            VCamRunStage(@"sbPanel", ^{
+                [[VCamPanel shared] prepare];
+            });
             VCamLog(@"[ctor] SpringBoard 音量键与悬浮窗就绪");
             return;
         }
 
-        // ---- 其它进程（各 App）：AVFoundation 层兜底 ----
-        // 注意：这里不能再判断"是不是相机 App"，因为直播类 App 太多了。
-        // 用 filter plist 控制加载范围，比运行时判断更可靠。
-        %init;
-        [[VCamMicInjector shared] install];
-        [VCamPhotoOutputInjector install];
-        [VCamMovieFileInjector install];
-        // mediaserverd 层可用时，预览覆盖层就让位（避免一次多余的像素转换）
-        if (![[VCamStateStore shared] msdDisabled]) {
-            [VCamPreviewOverlay setPassthroughMode:NO];
-        }
+        // ---- 4) 其它进程（各 App）：AVFoundation 层 ----
+        // 每个 install 单独一个阶段，这样"哪个 install 崩"能精确定位，
+        // 而且崩过一次之后那一个就被永久跳过，其余功能仍可用。
+        VCamRunStage(@"appSwizzle", ^{
+            %init;
+        });
+        VCamRunStage(@"appMic", ^{
+            [[VCamMicInjector shared] install];
+        });
+        VCamRunStage(@"appPhoto", ^{
+            [VCamPhotoOutputInjector install];
+        });
+        VCamRunStage(@"appMovie", ^{
+            [VCamMovieFileInjector install];
+        });
+        VCamRunStage(@"appOverlay", ^{
+            // mediaserverd 层可用时，预览覆盖层就让位（避免一次多余的像素转换）
+            if (![[VCamStateStore shared] msdDisabled]) {
+                [VCamPreviewOverlay setPassthroughMode:NO];
+            }
+        });
         VCamLog(@"[ctor] App 层注入完成");
     }
 }

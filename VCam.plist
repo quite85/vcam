@@ -9,17 +9,21 @@
             // ---- Safari / 网页 getUserMedia 相关 ----
             // 用户的主要场景是「用 Safari 打开网站调用摄像头拍照」。
             // Safari 的网页相机调用链路：
-            //   Safari(WKWebView) → WebKit 的 GPU/网络进程 → mediaserverd
-            // 「拍一张照片」这类 capturer 通常在 WebContent 进程里跑，
-            // 所以这里同时列出 Safari 与 WebKit 的进程名。
+            //   Safari(WKWebView) → WebKit 的渲染/内容进程 → mediaserverd
             //
-            // ⚠️ 这些都是**普通 App 进程**（不是系统守护进程），
-            //    即使 hook 出问题，最多是 Safari 崩一次，不会黑屏。
+            // ⚠️⚠️ 这里**刻意不包含** com.apple.WebKit.GPU ⚠️⚠️
+            //   WebKit.GPU 是 WebKit 的**图形合成进程**，直接参与屏幕绘制。
+            //   往它里面注入 dylib 一旦有问题，会导致渲染链路挂掉 ——
+            //   表现就是黑屏。它的风险和 mediaserverd 是同一量级，
+            //   完全违背"安全版不碰显示管线"的原则。
+            //   （v1.0.1 曾把它列进来，是设计失误。）
+            //
+            //   保留的是纯内容/网络进程，它们只处理网页与相机数据，
+            //   崩了最多是 Safari 的某个标签页出错，不影响整机。
             "com.apple.mobilesafari",
             "com.apple.SafariViewService",
             "com.apple.WebKit.WebContent",
             "com.apple.WebKit.Networking",
-            "com.apple.WebKit.GPU",
             "com.apple.AVConference",
             "com.apple.InCallService",
             "com.apple.telephonyutilities.callservicesd",
