@@ -132,6 +132,21 @@ VCam_FILES = \
     Media/VCamMovieFileInjector.m \
     Mic/VCamMicInjector.m
 
+# ---------------------------------------------------------------------------
+# include 路径（这一条曾经让构建失败）
+# ---------------------------------------------------------------------------
+# 项目里跨目录使用引号 import，例如：
+#     UI/VCamPanel.h        →  #import "VCamConfig.h"      （文件在 Core/）
+#     Media/VCamMovieFileInjector.m → #import "VCamCore.h" （文件在 Core/）
+#     Mic/VCamMicInjector.m →  #import "VCamPreviewOverlay.h"（文件在 UI/）
+#
+# 引号 import 只在「当前文件所在目录」和 -I 指定的目录里查找，
+# 不加这些 -I 就会报：
+#     UI/VCamPanel.h:17:9: fatal error: 'VCamConfig.h' file not found
+#
+# Tweak.x 位于仓库根目录，其它源文件在子目录里，
+# 所以下面把仓库根目录与四个子目录全部加进 -I。
+#
 # 说明：这里刻意 **不** 链接 libsubstrate。
 #   - Logos 的 %hook 走的是运行时 class_replaceMethod / MSHookFunction（dlsym 拿），
 #     不需要链接期符号；
@@ -142,7 +157,7 @@ VCam_CFLAGS = -fobjc-arc -Wno-deprecated-declarations -Wno-unused-variable \
               -Wno-unused-function -Wno-nullability-completeness \
               -Wno-objc-method-access -Wno-shadow -Wno-unused-parameter \
               -Wno-unguarded-availability-new \
-              -I$(THEOS_PROJECT_DIR) \
+              -I$(THEOS_PROJECT_DIR) -ICore -IUI -IMedia -IMic \
               -DVCAM_ENABLE_OBS=$(VCAM_ENABLE_OBS) \
               -DVCAM_PKG_ID=\"$(VCAM_PKG_ID)\"
 
