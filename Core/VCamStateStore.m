@@ -96,7 +96,11 @@ static const uint16_t  kVCamDefaultPort    = 5600;  // OBS 推流默认端口
     } else {
         VCamLog(@"[state] 写入失败 %@", path);
     }
-    uint32_t token = 0;
+    // 注意：notify_register_check 的签名是 (const char *name, int *out_token)，
+    // 这里的 token 必须是 **int** 而不是 uint32_t。
+    // Theos 默认带 -Werror -Wpointer-sign，用 uint32_t 会直接编译失败：
+    //   error: passing 'uint32_t *' to parameter of type 'int *'
+    int token = 0;
     notify_register_check(kVCamNotificationStateChanged.UTF8String, &token);
     if (token) {
         notify_set_state(token, (uint64_t)NSDate.date.timeIntervalSince1970);
