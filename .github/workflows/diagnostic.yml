@@ -24,6 +24,76 @@ on:
       - '.github/workflows/diagnostic.yml'
 
 jobs:
+  stage2:
+    name: 构建 Stage2 最小可用版
+    runs-on: macos-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Theos
+        run: |
+          set -e
+          export THEOS="$HOME/theos"
+          if [ ! -d "$THEOS" ]; then
+            git clone --recursive --depth 1 https://github.com/theos/theos.git "$THEOS"
+          fi
+          echo "THEOS=$THEOS" >> "$GITHUB_ENV"
+          echo "$THEOS/bin" >> "$GITHUB_PATH"
+
+      - name: 安装 ldid
+        run: brew install ldid 2>/dev/null || true
+
+      - name: 构建 Stage2
+        run: |
+          set -e
+          cd experiments/stage2
+          export THEOS="$HOME/theos"
+          export PATH="$THEOS/bin:$PATH"
+          echo "=== 构建参数 ==="
+          echo "  TWEAK_NAME = $(grep '^TWEAK_NAME' Makefile | awk '{print $3}')"
+          echo "  filter     ="
+          cat VCam.plist | sed 's/^/    /'
+          echo ""
+          make package FINALPACKAGE=1 ARCHS=arm64 THEOS_PACKAGE_SCHEME=rootless 2>&1 | tail -40
+          echo ""
+          echo "=== 产物 ==="
+          ls -lh packages/*.deb 2>/dev/null || ls -lh "$THEOS"/packages/*.deb
+
+      - name: 校验 Stage2 产物
+        run: |
+          set +e
+          cd experiments/stage2
+          D=$(ls -t packages/*.deb "$THEOS"/packages/*.deb 2>/dev/null | head -1)
+          if [ -z "$D" ]; then echo "❌ 无 deb"; exit 1; fi
+          echo "deb: $D  ($(wc -c < "$D" | tr -d ' ') 字节)"
+          echo ""
+          echo "=== 安装的文件 ==="
+          dpkg-deb -c "$D" 2>/dev/null | awk '{print "  " $6}' | grep -v '/$' || true
+          echo ""
+          T=$(mktemp -d); dpkg-deb -x "$D" "$T" 2>/dev/null
+          echo "=== dylib ==="
+          find "$T" -name '*.dylib' -exec file {} \; || true
+          echo ""
+          echo "=== filter（应只含 3 个 Bundle）==="
+          find "$T" -name '*.plist' -exec cat {} \; || true
+          echo ""
+          echo "=== 关键检查 ==="
+          if find "$T" -name '*mediaserverd*' 2>/dev/null | grep -q .; then
+            echo "  ⚠️  含 mediaserverd filter —— Stage2 不该有"
+          else
+            echo "  ✅ 不含 mediaserverd filter（不注入系统守护进程）"
+          fi
+          rm -rf "$T"
+
+      - name: 上传 Stage2
+        uses: actions/upload-artifact@v4
+        with:
+          name: vcam-stage2
+          path: experiments/stage2/packages/*.deb
+          if-no-files-found: warn
+          retention-days: 30
+
   stage1:
     name: 构建 Stage1 诊断包
     runs-on: macos-latest
