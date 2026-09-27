@@ -14,7 +14,14 @@
 
 #pragma mark - Pool 缓存
 
-static NSMutableDictionary<NSString *, CVPixelBufferPoolRef> *gPools = nil;
+// 注意：CVPixelBufferPoolRef 是 CoreFoundation 类型（struct __CVPixelBufferPool *），
+// **不是 Objective-C 对象**，所以不能写成
+//     NSMutableDictionary<NSString *, CVPixelBufferPoolRef> *
+// 那会报：
+//     error: type argument 'CVPixelBufferPoolRef' is neither an
+//            Objective-C object nor a block type
+// 这里只用无泛型的 NSMutableDictionary 存池，取值时 __bridge 转换。
+static NSMutableDictionary *gPools = nil;
 static os_unfair_lock gPoolLock = OS_UNFAIR_LOCK_INIT;
 
 + (CVPixelBufferPoolRef)_poolForWidth:(size_t)w
@@ -216,31 +223,47 @@ static os_unfair_lock gPoolLock = OS_UNFAIR_LOCK_INIT;
     duv2.width  = duv.width  * 2;
     duv2.rowBytes = duv.rowBytes;
 
+    // 镜像的目标缓冲（在旋转之后使用）
+    vImage_Buffer dym = dy, duvm = duv2;
+
+    // vImage 的旋转常量名称（来自 Accelerate/Geometry.h，iOS 5.0+）：
+    //   kRotate0DegreesClockwise / kRotate90DegreesClockwise
+    //   kRotate180DegreesClockwise / kRotate270DegreesClockwise
+    // 没有 kRotateCW / kRotateCCW / kRotate180 这些短名字（那是别的库的写法）。
+    //
+    // 另外注意：vImage 的错误码会互相污染（例如 -21774 | -21773 得到无意义的值），
+    // 所以每个调用单独判错，不能用 err |= ... 累积。
     vImage_Error err = kvImageNoError;
+    uint8_t rotConst = kRotate0DegreesClockwise;
     switch (rotation) {
-        case VCamRotation90:
-            err |= vImageRotate90_Planar8(&sy, &dy, kRotateCW, 0, kvImageNoFlags);
-            err |= vImageRotate90_Planar8(&suv2, &duv2, kRotateCW, 0, kvImageNoFlags);
-            break;
-        case VCamRotation180:
-            err |= vImageRotate90_Planar8(&sy, &dy, kRotate180, 0, kvImageNoFlags);
-            err |= vImageRotate90_Planar8(&suv2, &duv2, kRotate180, 0, kvImageNoFlags);
-            break;
-        case VCamRotation270:
-            err |= vImageRotate90_Planar8(&sy, &dy, kRotateCCW, 0, kvImageNoFlags);
-            err |= vImageRotate90_Planar8(&suv2, &duv2, kRotateCCW, 0, kvImageNoFlags);
-            break;
+        case VCamRotation90:  rotConst = kRotate90DegreesClockwise;  break;
+        case VCamRotation180: rotConst = kRotate180DegreesClockwise; break;
+        case VCamRotation270: rotConst = kRotate270DegreesClockwise; break;
         case VCamRotation0:
-        default:
-            err |= vImageCopyBuffer(&sy, &dy, 1, kvImageNoFlags);
-            err |= vImageCopyBuffer(&suv2, &duv2, 1, kvImageNoFlags);
-            break;
+        default:              rotConst = kRotate0DegreesClockwise;   break;
     }
-    if (mirror) {
-        // 镜像在旋转之后做：对每行做 vImageHorizontalReflect
-        vImage_Buffer dym = dy, duvm = duv2;
-        err |= vImageHorizontalReflect_Planar8(&dy, &dym, kvImageNoFlags);
-        err |= vImageHorizontalReflect_Planar8(&duv2, &duvm, kvImageNoFlags);
+    // vImageRotate90_Planar8 签名：
+    //   vImage_Error vImageRotate90_Planar8(const vImage_Buffer *src,
+    //                                       const vImage_Buffer *dest,
+    //                                       uint8_t rotationConstant,
+    //                                       Pixel_8 backColor,
+    //                                       vImage_Flags flags);
+    // 0 度时它就是"拷贝"，所以不需要单独用 vImageCopyBuffer。
+    err = vImageRotate90_Planar8(&sy, &dy, rotConst, 0, kvImageNoFlags);
+    if (err == kvImageNoError) {
+        err = vImageRotate90_Planar8(&suv2, &duv2, rotConst, 0, kvImageNoFlags);
+    }
+    if (mirror && err == kvImageNoError) {
+        // 镜像在旋转之后做。
+        // vImageHorizontalReflect_Planar8(const vImage_Buffer *src,
+        //                                const vImage_Buffer *dest,
+        //                                vImage_Flags flags)
+        // 之前这里写成了 (&dy, &dym) 且 dym = dy —— 源和目标同一个 buffer，
+        // 属于原地镜像，结果未定义。这里改成正确的 (源, 目标) 配对。
+        err = vImageHorizontalReflect_Planar8(&dy, &dym, kvImageNoFlags);
+        if (err == kvImageNoError) {
+            err = vImageHorizontalReflect_Planar8(&duv2, &duvm, kvImageNoFlags);
+        }
     }
 
     CVPixelBufferUnlockBaseAddress(dst, 0);
@@ -380,11 +403,15 @@ static os_unfair_lock gPoolLock = OS_UNFAIR_LOCK_INIT;
         VCamLog(@"[buf] 创建 sampleBuffer 失败 %d", (int)st);
         return NULL;
     }
-    if (timebase) {
-        // 挂上 timebase 让下游（预览层 / 录制器）能正确排程
-        CMSampleBufferSetInvalidateCallback(sb, NULL, 0);
-        CFRetain(timebase);
-    }
+    // 说明：这里**故意不调用** CMSampleBufferSetInvalidateCallback。
+    //   1) 它的第二个参数在 iPhoneOS16.5.sdk 头文件里标了 CM_NONNULL：
+    //        CMSampleBufferInvalidateCallback CM_NONNULL invalidateCallback,
+    //      传 NULL 会触发 -Werror,-Wnonnull 编译失败；
+    //   2) CoreMedia 没有"把 timebase 挂到 sampleBuffer 上"的公开 API，
+    //      原来那两行（SetInvalidateCallback + CFRetain）既不生效又漏了 release。
+    //      下游（AVCaptureVideoDataOutput delegate / 预览层）本来就是按
+    //      sampleBuffer 自带的时间戳排程的，不需要额外挂 timebase。
+    (void)timebase;
     return sb;
 }
 
@@ -461,13 +488,67 @@ static os_unfair_lock gPoolLock = OS_UNFAIR_LOCK_INIT;
         .presentationTimeStamp = CMTIME_IS_NUMERIC(hostTime) ? hostTime : [self hostTime],
         .decodeTimeStamp = kCMTimeInvalid,
     };
+
+    // ⚠️ 这里原来写错了。CMSampleBufferCreate 的权威签名（iPhoneOS16.5.sdk）是：
+    //   OSStatus CMSampleBufferCreate(
+    //       CFAllocatorRef allocator, CMBlockBufferRef dataBuffer, Boolean dataReady,
+    //       CMSampleBufferMakeDataReadyCallback makeDataReadyCallback, void *makeDataReadyRefcon,
+    //       CMFormatDescriptionRef formatDescription, CMItemCount numSamples,
+    //       CMItemCount numSampleTimingEntries, const CMSampleTimingInfo *sampleTimingArray,
+    //       CMItemCount numSampleSizeEntries, const size_t *sampleSizeArray,   // ← 不是 AudioBufferList*
+    //       CMSampleBufferRef *sBufOut);
+    // 把 AudioBufferList 传给 sampleSizeArray 会报：
+    //   error: incompatible pointer types passing 'AudioBufferList *' to
+    //          parameter of type 'const size_t *'
+    //
+    // 正确的两段式做法（Apple 推荐的 AudioBufferList → CMSampleBuffer 路径）：
+    //   1) 先建一个空数据缓冲的 CMSampleBuffer（numSamples=0，无 timing/size 数组）
+    //   2) 再用 CMSampleBufferSetDataBufferFromAudioBufferList 把 PCM 拷进去
+    // 第二步的签名是：
+    //   OSStatus CMSampleBufferSetDataBufferFromAudioBufferList(
+    //       CMSampleBufferRef sbuf,
+    //       CFAllocatorRef blockBufferStructureAllocator,
+    //       CFAllocatorRef blockBufferBlockAllocator,
+    //       uint32_t flags,
+    //       const AudioBufferList *bufferList);
+    if (!abl->mNumberBuffers) {          // 空 buffer list 会踩未定义行为
+        CFRelease(fmt);
+        return NULL;
+    }
+
     CMSampleBufferRef sb = NULL;
-    OSStatus st = CMSampleBufferCreate(kCFAllocatorDefault, NULL, true, NULL, NULL,
-                                       fmt, (CMItemCount)frames, 1, &timing,
-                                       abl->mNumberBuffers, abl, &sb);
+    OSStatus st = CMSampleBufferCreate(kCFAllocatorDefault,
+                                       NULL,        // 先不给数据缓冲
+                                       true,        // dataReady
+                                       NULL, NULL,  // 不需要 make-data-ready 回调
+                                       fmt,
+                                       0,           // numSamples（稍后由 SetDataBuffer 填充）
+                                       0, NULL,     // 暂无 timing
+                                       0, NULL,     // 暂无 sampleSize
+                                       &sb);
     CFRelease(fmt);
     if (st != noErr || !sb) return NULL;
-    CMSampleBufferSetDataReady(sb);
+
+    // 把 AudioBufferList 的数据拷进 sampleBuffer 的 CMBlockBuffer。
+    // 传 kCMSampleBufferFlag_AudioBufferList_Assure16ByteAlignment 保证 16 字节对齐
+    // （下游 AudioConverter / AAC 编码器对该对齐有要求）。
+    st = CMSampleBufferSetDataBufferFromAudioBufferList(
+            sb,
+            kCFAllocatorDefault, kCFAllocatorDefault,
+            kCMSampleBufferFlag_AudioBufferList_Assure16ByteAlignment,
+            abl);
+    if (st != noErr) {
+        VCamLog(@"[buf] SetDataBufferFromAudioBufferList 失败 %d", (int)st);
+        CFRelease(sb);
+        return NULL;
+    }
+
+    // 时间戳单独设置（上面建 buffer 时 numSamples=0，没有 timing 条目）
+    st = CMSampleBufferSetOutputPresentationTimeStamp(sb, timing.presentationTimeStamp);
+    if (st != noErr) {
+        // 不致命：下游多按"现在"处理，仍然有声音
+        VCamLog(@"[buf] 设置 PTS 失败 %d", (int)st);
+    }
     return sb;
 }
 

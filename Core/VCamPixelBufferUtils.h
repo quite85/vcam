@@ -92,3 +92,5 @@ typedef NS_ENUM(NSInteger, VCamRotation) {
 @end
 
 NS_ASSUME_NONNULL_END
+
+#endif /* VCAM_PIXELBUFFER_UTILS_H */
