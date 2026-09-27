@@ -127,12 +127,29 @@ jobs:
             exit $RC
           fi
 
+      - name: 构建阶梯测试包（stageA / stageB / stageC）
+        run: |
+          set +e
+          export THEOS="$HOME/theos"
+          export PATH="$THEOS/bin:$PATH"
+          chmod +x scripts/*.sh
+          ./scripts/build-staged.sh 2>&1 | tee /tmp/vcam-staged.log
+          RC=${PIPESTATUS[0]}
+          echo ""
+          echo "--- build-staged.sh 退出码 = $RC ---"
+          echo "--- 产物 ---"
+          ls -lh packages/ 2>/dev/null
+          # 阶梯构建失败不阻塞主流程（主 deb 已经打好了）
+          exit 0
+
       - name: 上传编译日志（仅失败时）
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: vcam-build-logs
-          path: /tmp/vcam-build.log
+          path: |
+            /tmp/vcam-build.log
+            /tmp/vcam-staged.log
           if-no-files-found: warn
           retention-days: 7
 
