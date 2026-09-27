@@ -121,10 +121,16 @@ jobs:
           set -e
           # 关键：Theos 只会自动安装与 tweak 同名的 VCam.plist。
           # VCam-mediaserverd.plist 名字不同，必须放进 layout/ 才会被打进 deb。
-          # 这一步做了之后，用户装完 deb 就自带系统级 filter，不需要再手动 cp。
+          #
+          # ⚠️ layout/ 下的**所有**文件都会被原样打进 deb（安装到设备），
+          #    所以放在这里的只能是"必须安装到设备的东西"。
+          #    文档、.gitkeep 之类的辅助文件绝不能放在 layout/ 里 ——
+          #    曾经因此让 deb 里多出 README.txt 和 .gitkeep 两个垃圾文件。
+          #    这里在拷贝前先清空，保证 deb 内容完全可控。
+          rm -rf layout
           mkdir -p layout/Library/MobileSubstrate/DynamicLibraries
           cp -f VCam-mediaserverd.plist layout/Library/MobileSubstrate/DynamicLibraries/
-          echo "layout 内容："
+          echo "layout 内容（会进 deb）："
           find layout -type f
 
       - name: Logos 预检（诊断用，失败不阻塞编译）
@@ -191,14 +197,14 @@ jobs:
             xcrun -sdk iphoneos clang $COMMON $FRAMEWORKS "$src" 2>/tmp/synerr.txt
             rc=$?
             if [ -s /tmp/synerr.txt ] || [ "$rc" -ne 0 ]; then
-              echo "----- $src （clang 退出码 $rc）-----"
+              echo "----- ${src} （clang 退出码 ${rc}）-----"
               cat /tmp/synerr.txt
               FAILED=1
             else
               OKCOUNT=$((OKCOUNT + 1))
             fi
           done
-          echo "语法预检：通过 $OKCOUNT 个文件，失败 $FAILED（1 = 有文件报错）"
+          echo "语法预检：通过 ${OKCOUNT} 个文件，失败 ${FAILED}（1 = 有文件报错）"
           if [ "$FAILED" -ne 0 ]; then
             echo "::warning::语法预检发现问题（见上方 file:line:col）。正式编译仍会继续。"
           fi

@@ -151,8 +151,12 @@ build_one() {
     cp -f "$src" "$dest"
     echo "✅ 产出：$dest"
 
-    # 再留一份不带架构标记的副本，方便本地 ad-hoc 安装
-    cp -f "$src" "$OUT_DIR/${PKG_ID}_${VERSION}_${arch_name}.deb" 2>/dev/null || true
+    # 说明：这里刻意**不再**额外复制一份"不带架构标记"的副本。
+    #   之前为了本地 ad-hoc 安装方便会多留一份，但结果是：
+    #     · Theos 自己产出的原始名字那份也会被 make-repo.sh 扫进 debs/，
+    #     · 加上手动的副本，debs/ 里出现 3~5 个内容相同、名字不同的 deb，
+    #       Packages 里就会出现重复条目，用户不知道该装哪个。
+    #   现在只保留带 -rootful / -rootless 后缀的两个，干净明确。
 }
 
 case "$ONLY" in

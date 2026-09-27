@@ -1,6 +1,0 @@
-# 占位文件：让 layout/Library/MobileSubstrate/DynamicLibraries/ 目录存在于 git 里。
-# 真正的 VCam-mediaserverd.plist 由 .github/workflows/build.yml 的
-# 「把 mediaserverd filter 放进 layout」步骤在编译前拷进来。
-#
-# 也可以手动拷（本地编译时会用到）：
-#   cp VCam-mediaserverd.plist layout/Library/MobileSubstrate/DynamicLibraries/

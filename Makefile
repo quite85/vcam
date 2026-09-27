@@ -23,7 +23,6 @@
 
 export ARCHS        = arm64 arm64e
 export TARGET       = iphone:clang:latest:15.0
-export PACKAGE_BUILDNAME = vcam
 
 # ---------------------------------------------------------------------------
 # 编译用 SDK 版本

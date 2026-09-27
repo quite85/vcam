@@ -423,23 +423,36 @@ Theos 只会自动安装**与 tweak 同名**的 `VCam.plist`。
 `VCam-mediaserverd.plist` 名字不同，**不会被自动安装** —— 不处理的话
 系统级注入（mediaserverd 层）根本不会加载。
 
-最省事的做法：在仓库里建好 `layout/` 目录，让 Theos 直接拷进去
-（rootless 会自动加 `/var/jb` 前缀）：
+**本工程已经在 CI 里自动处理好了**：`.github/workflows/build.yml` 里有一个
+「把 mediaserverd filter 放进 layout」步骤，会在编译前执行：
 
 ```bash
+rm -rf layout
+mkdir -p layout/Library/MobileSubstrate/DynamicLibraries
+cp -f VCam-mediaserverd.plist layout/Library/MobileSubstrate/DynamicLibraries/
+```
+
+这样打出来的 deb 就**自带**这个 filter，用户装完即生效，不需要手动 `cp`。
+
+#### layout/ 目录的规则（很容易踩坑）
+
+`layout/` 下的**每一个文件都会被原样打进 deb 并安装到设备**。
+所以这里**只能放"必须安装到设备的东西"**。
+
+> 本工程真实踩过的坑：曾在 `layout/` 里放了 `README.txt`（说明文档）和
+> `.gitkeep`（占位文件），结果它们被一起打进了 deb，安装后在设备上出现
+> `/var/jb/README.txt` 和 `.../DynamicLibraries/.gitkeep` 两个垃圾文件。
+> 现在 workflow 里用 `rm -rf layout` 先清空再拷贝，保证 deb 内容完全可控。
+
+如果你要手动打包（不走 CI），记得先自己建好这个目录：
+
+```bash
+rm -rf layout
 mkdir -p layout/Library/MobileSubstrate/DynamicLibraries
 cp VCam-mediaserverd.plist layout/Library/MobileSubstrate/DynamicLibraries/
 ```
 
-或者用 Theos 的过滤条件（`vcam-msd/` 子工程）：
-
-```make
-# vcam/msd/Makefile
-TWEAK_NAME = VCamMSD
-VCamMSD_FILES = VCamMSD.x
-include $(THEOS_MAKE_PATH)/tweak.mk
-# 根 Makefile 里加： SUBPROJECTS += msd
-```
+（rootless 打包时 Theos 会自动给 `layout/` 下的路径加 `/var/jb` 前缀。）
 
 更完整的三种方案见 [Docs/ARCHITECTURE.md 第 1.2 节](Docs/ARCHITECTURE.md)。
 
