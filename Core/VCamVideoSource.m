@@ -36,7 +36,10 @@ static const UInt32  kVCamPCMOutChannels   = 2;
         _loop = YES;
         _audioGain = 1.0f;
         _lock = OS_UNFAIR_LOCK_INIT;
-        _targetFPS = 30;
+        // 注意：targetFPS 是父类 VCamFrameSourceBase 的**属性**，
+        // 子类不能直接写 _targetFPS（ivars 不能跨类访问，会报
+        // "use of undeclared identifier '_targetFPS'"）。必须用点语法走 setter。
+        self.targetFPS = 30;
     }
     return self;
 }
@@ -326,7 +329,11 @@ static const UInt32  kVCamPCMOutChannels   = 2;
 
             if (!_loop || !_audioRunning) break;
             // 循环：等到视频也回到开头（避免音视频错位），再重新读
-            while (_audioRunning && self.loop && _player.currentTime.seconds > 0.35) {
+            // 注意：CMTime 是 C 结构体，**没有 .seconds 属性**，
+            // 必须用 CMTimeGetSeconds() 取值（写 _player.currentTime.seconds
+            // 会报 "no member named 'seconds' in 'CMTime'"）。
+            while (_audioRunning && self.loop &&
+                   CMTimeGetSeconds(_player.currentTime) > 0.35) {
                 usleep(10000);
             }
         }
