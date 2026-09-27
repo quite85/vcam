@@ -80,6 +80,14 @@ jobs:
           fi
           echo "✅ SDK 就绪: $THEOS/sdks/$SDK"
 
+      - name: 安装 dpkg（make-repo.sh 需要 dpkg-scanpackages）
+        run: |
+          set +e
+          which dpkg-scanpackages && { echo "已存在"; exit 0; }
+          brew install dpkg 2>&1 | tail -5
+          which dpkg-scanpackages || echo "::warning::dpkg-scanpackages 仍不可用，make-repo.sh 会走 fallback"
+          exit 0
+
       - name: 生成 Sileo 源图标（缺失时）
         run: |
           set +e

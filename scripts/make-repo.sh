@@ -48,28 +48,36 @@ echo "   本地目录 : $REPO_DIR"
 echo "=============================================================="
 
 # ---- 依赖检查 ----
+#
+# 这里的判断顺序曾经是错的：
+#     for cand in dpkg-scanpackages /usr/bin/... /usr/local/bin/...; do
+#         command -v "$cand" && break        # command -v 对绝对路径不生效
+#     done
+#     [ -z "$SCANPACKAGES" ] && { 打印提示; exit 1; }    # 先退出了
+#     command -v dpkg-deb && SCANPACKAGES=__fallback__   # 永远到不了这里
+#
+# 两个问题：
+#   1) command -v 对绝对路径不返回成功，只有裸命令名才行，那两轮循环无效
+#   2) 找不到时先 exit 1，后面的 dpkg-deb fallback 分支根本执行不到，
+#      于是脚本宣称的"内置 fallback"形同虚设。
+#      macOS 上（brew 的 dpkg 不提供 dpkg-scanpackages）必然踩到。
+#
+# 现在改成：能 scanpackages 就用它，否则只要有 dpkg-deb 就走 fallback，
+# 两者都没有才报错退出。
 SCANPACKAGES=""
-for cand in dpkg-scanpackages /usr/bin/dpkg-scanpackages /usr/local/bin/dpkg-scanpackages; do
-    if command -v "$cand" >/dev/null 2>&1; then SCANPACKAGES="$cand"; break; fi
-done
-if [ -z "$SCANPACKAGES" ]; then
-    cat >&2 <<'EOF'
-❌ 找不到 dpkg-scanpackages。
-   安装方式：
-     Debian/Ubuntu : sudo apt install dpkg-dev
-     macOS (brew)  : brew install dpkg
-     Windows       : 用 WSL，或 Docker：
-                     docker run --rm -v "$PWD:/w" -w /w debian:bookworm \
-                       bash -c "apt update && apt install -y dpkg-dev && ./scripts/make-repo.sh"
-   也可以用 dpkg-deb 手动生成（脚本已内置 fallback，见下）。
-EOF
-    if command -v dpkg-deb >/dev/null 2>&1; then
-        echo "➡️  检测到 dpkg-deb，使用内置 fallback 生成 Packages。"
-        SCANPACKAGES="__fallback__"
-    else
-        exit 1
-    fi
+if command -v dpkg-scanpackages >/dev/null 2>&1; then
+    SCANPACKAGES="dpkg-scanpackages"
+elif command -v dpkg-deb >/dev/null 2>&1; then
+    echo "提示：没有 dpkg-scanpackages（macOS 的 brew dpkg 不提供），"
+    echo "      改用 dpkg-deb 内置 fallback 生成 Packages。"
+    SCANPACKAGES="__fallback__"
+else
+    echo "错误：既没有 dpkg-scanpackages 也没有 dpkg-deb，无法生成 APT 源。" >&2
+    echo "  Debian/Ubuntu : sudo apt install dpkg-dev" >&2
+    echo "  macOS (brew)  : brew install dpkg" >&2
+    exit 1
 fi
+echo "生成工具：$SCANPACKAGES"
 
 mkdir -p "$DEBS_DIR" "$REPO_DIR/depiction" "$REPO_DIR/icons"
 
