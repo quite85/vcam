@@ -338,11 +338,18 @@ for f in "$DEBS_DIR"/*.deb; do
     [ -e "$f" ] || continue
     b="$(basename "$f")"
 
+    # 本包的所有产物都保留，包括阶梯测试包（stageA/stageB/stageC）。
+    #   <pkgid>_2.0.0_iphoneos-arm64-rootless.deb   ← 主包
+    #   <pkgid>_2.1.0_iphoneos-arm64-stageA.deb     ← 阶梯包
+    # 两者都以 "${PKG_ID}_" 开头，统一放行。
+    #
+    # ⚠️ 曾经只放行 *-rootful.deb / *-rootless.deb，
+    #    结果阶梯包被当成"命名不规范"删掉，Release 里就少东西。
     case "$b" in
-        "${PKG_ID}"_*-rootful.deb|"${PKG_ID}"_*-rootless.deb)
-            : ;;                                  # 正常命名，保留
+        "${PKG_ID}"_*.deb)
+            : ;;                                  # 本包产物，保留
         *)
-            echo "  - 移除命名不规范的 deb: $b"
+            echo "  - 移除非本包的 deb: $b"
             rm -f "$f"
             REMOVED=$((REMOVED + 1))
             ;;
