@@ -313,62 +313,34 @@ echo "➡️  生成 Release …"
     done
 } > Release
 
-# ---- 6) 清理"没有变体后缀"的重复 deb ----
+# ---- 6) 清理命名不规范的 deb ----
 #
-# ⚠️ 这里曾把新命名的包全删光（v1.0.1 的 bug，导致线上 repo/debs 为空、所有 Filename 404）。
-#    当时是所有变体打完后在同一个 debs/ 里，用 find 的否定表达式筛掉
-#    "-rootful.deb" / "-rootless.deb" 结尾之外的一切：
-#        find debs -name '*.deb' ! -name '*-rootful.deb' ! -name '*-rootless.deb'
-#   而 v1.0.1 起文件名是
-#        <pkgid>_<ver>_iphoneos-arm64-rootless-safe.deb
-#        <pkgid>_<ver>_iphoneos-arm64-rootless-full.deb
-#   它们都不以 "-rootless.deb" 结尾，于是被判定为"无架构标记的重复包"而删除。
+# ⚠️ 这里曾把新命名的包全删光（v1.0.1 的 bug：线上 repo/debs 为空、所有 Filename 404）。
+#    当时用 find 的否定表达式筛掉 "-rootful.deb" / "-rootless.deb" 结尾之外的一切，
+#    而当时实际文件名是 <pkgid>_<ver>_iphoneos-arm64-rootless-safe.deb，都不这样结尾。
 #
-#    现在改成**只删本包前缀、且没有变体后缀**的文件，白名单式判断，
-#    绝不会碰到 -safe / -full 的正常产物。
+#    现在只认本包前缀，且只保留带架构标记（-rootful / -rootless）的产物。
 #
-#    另外要**保留诊断包**（com.quite85.vcamping / com.quite85.vcamstage1）。
-#    它们不符合 <pkgid>_*-safe.deb / -full.deb 的命名，如果按下面的
-#    默认分支处理会被当成"非本包的 deb"删掉 —— 而正式流程现在会把
-#    Stage1 一并放进 packages/ 以便出现在 Sileo 源里，所以必须放行。
+# 当前本工程的命名（build.sh 产出）：
+#     <pkgid>_<ver>_iphoneos-arm64-rootful.deb
+#     <pkgid>_<ver>_iphoneos-arm64-rootless.deb
 PKG_ID="${PKG_ID:-com.quite85.virtualcamera}"
-KEEP_PREFIXES="com.quite85.vcamping com.quite85.vcamstage1"
 REMOVED=0
-KEPT_DIAG=0
 for f in "$DEBS_DIR"/*.deb; do
     [ -e "$f" ] || continue
     b="$(basename "$f")"
 
-    # 先看是否属于要保留的诊断包前缀
-    is_diag=0
-    for kp in $KEEP_PREFIXES; do
-        case "$b" in
-            "${kp}"_*) is_diag=1 ;;
-        esac
-    done
-    if [ "$is_diag" -eq 1 ]; then
-        echo "  · 保留诊断包: $b"
-        KEPT_DIAG=$((KEPT_DIAG + 1))
-        continue
-    fi
-
     case "$b" in
-        "${PKG_ID}"_*-safe.deb|"${PKG_ID}"_*-full.deb)
+        "${PKG_ID}"_*-rootful.deb|"${PKG_ID}"_*-rootless.deb)
             : ;;                                  # 正常命名，保留
-        "${PKG_ID}"_*.deb)
-            echo "  - 移除无变体后缀的重复包: $b"
-            rm -f "$f"
-            REMOVED=$((REMOVED + 1))
-            ;;
         *)
-            echo "  - 移除非本包的 deb: $b"
+            echo "  - 移除命名不规范的 deb: $b"
             rm -f "$f"
             REMOVED=$((REMOVED + 1))
             ;;
     esac
 done
 [ "$REMOVED" -eq 0 ] && echo "  （无需清理，命名均规范）"
-[ "$KEPT_DIAG" -gt 0 ] && echo "  （保留 $KEPT_DIAG 个诊断包）"
 
 echo ""
 echo "  最终 debs/ 内容："

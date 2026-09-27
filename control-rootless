@@ -1,23 +1,23 @@
 Package: com.quite85.virtualcamera
-Name: 虚拟摄像头 (系统注入版)
-Version: 1.0.1
+Name: 虚拟摄像头
+Version: 2.0.0
 Architecture: iphoneos-arm64
-Description: 虚拟摄像头 + 虚拟麦克风（含系统守护进程注入，系统级生效）—— rootless 版本，适用于 Dopamine / palera1n rootless / XinaA15 等无根越狱（安装到 /var/jb）
- 同时注入 App 层与 mediaserverd / camerad 等系统守护进程，
- 让所有调用系统相机管线的 App（包括未列入 filter 的）都拿到虚拟画面：
- 相册视频循环播放、相册图片静帧（约 30fps 重复）、
- 或接收电脑 OBS 推来的 MPEG-TS(H.264+AAC) 流并硬解注入。
- 支持系统相机、Safari 网页 getUserMedia、FaceTime、微信、Zoom 等。
- 交互：按「音量减」弹出可拖动悬浮小窗，选择视频 / 图片 / OBS / 禁用替换。
- 无卡密、无联网授权、无 UDID 上传，全部离线本地运行。
+Description: 把相机画面替换为相册视频（iOS 15.0 - 16.6.1）—— rootless 版本，适用于 Dopamine / palera1n rootless / XinaA15 等无根越狱（安装到 /var/jb）
+ 从相册选一个视频，它会循环播放并用它替换相机画面。
+ 打开相机、Safari 网页、微信视频通话等，看到的都是这个视频。
  .
- ⚠️ 本包注入 mediaserverd —— 它是 iOS 显示与媒体管线的上游。
-    若该 hook 崩溃进入重启循环，**会导致手机黑屏**（v1.0.0 曾发生）。
-    请先安装并稳定使用过「虚拟摄像头 (安全版)」，再考虑换成本包。
-    两者不能同时安装。
+ 用法：短按「音量减」弹出悬浮小窗 → 选相册视频 → 打开相机即可看到效果。
+ 悬浮窗可拖动，松手自动贴边。再按一次音量减可随时唤出。
  .
- 安装路径 /var/jb/Library/MobileSubstrate/DynamicLibraries 与
- /var/jb/Library/PreferenceBundles。请勿与 rootful 版同时安装。
+ 说明：
+ · 用 AVAssetReader 解码相册视频，循环播放，时间戳重映射到当前时间，
+   保证下游看到的 PTS 单调递增，不会卡帧。
+ · 帧替换用「代理模式」实现：把 AVCaptureVideoDataOutput 的 delegate
+   包一层，兼容任何写法（包括自己实现协议和消息转发的 App）。
+ · 不注入 mediaserverd 等系统守护进程，只注入 App 层与 SpringBoard。
+ .
+ 安装路径 /var/jb/Library/MobileSubstrate/DynamicLibraries。
+ 请勿与 rootful 版同时安装。
  .
  仅用于个人内容创作、直播替代画面、或物理摄像头损坏时的应急替代方案。
  使用者需自行遵守各 App 的服务条款与当地法律法规。
@@ -29,5 +29,4 @@ Maintainer: quite85 <quite85@users.noreply.github.com>
 Author: quite85 <quite85@users.noreply.github.com>
 Section: Tweaks
 Depends: firmware (>= 15.0), firmware (<< 16.7), mobilesubstrate | ellekit
-Recommends: preferenceloader
 Tag: purpose::extension, role::hacker

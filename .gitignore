@@ -1,0 +1,18 @@
+# Theos 编译中间产物
+.theos/
+packages/
+obj/
+*.o
+*.dylib
+*.deb
+
+# 编辑器 / 系统
+.DS_Store
+Thumbs.db
+desktop.ini
+*.swp
+*~
+
+# 本地日志与临时文件
+*.log
+/tmp/

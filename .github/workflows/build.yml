@@ -1,49 +1,31 @@
+name: 构建与发布
+
 # ============================================================================
-#  .github/workflows/build.yml
+# 虚拟摄像头 —— 构建两个 deb 并发布到 GitHub Release + Sileo 源（GitHub Pages）
 #
-#  推送 tag（形如 v1.0.0）时：
-#    1) 在 macOS Runner 上安装 Theos
-#    2) 编译 rootful + rootless 两个 deb
-#    3) 生成 APT 源（Packages / Packages.gz / Release）
-#    4) 把 tag 对应的版本发布成 GitHub Release（附带两个 deb）
-#    5) 把整个 repo/ 目录部署到 GitHub Pages
+# 触发：
+#   · push tag（如 v2.0.0）→ 构建 + 建 Release + 部署 Pages
+#   · 手动 workflow_dispatch → 只构建（不建 Release，除非有 tag）
 #
-#  为什么用 macos-latest：
-#    Theos 需要 Xcode 的 iOS SDK 与 clang 来交叉编译 arm64e，
-#    Linux Runner 上无法完整构建（可以用 theos-linux + 工具链，但更麻烦）。
-#
-#  使用前请改：
-#    - 环境变量 DOMAIN / REPO_PATH（第 30 行附近）
-#    - Settings → Pages → Source 选 "GitHub Actions"
+# 工程结构（这一版是基于开源项目重写的）：
+#   Tweak.xm                    主实现（SpringBoard UI + 音量键 + 进程分流）
+#   src/VCamMediaManager.m      视频帧源（AVAssetReader 解码 + 循环 + PTS 重映射）
+#   src/VCamFrameInjector.m     帧替换（代理模式包装 AVCaptureVideoDataOutput delegate）
+#   src/VCamLog.{h,m}           日志
+#   VCam.plist                  filter（22 个 Bundle，不含系统守护进程）
 # ============================================================================
-name: Build & Publish VCam
 
 on:
   push:
-    tags:
-      - 'v*'
+    tags: ['v*']
+    branches: [main]
   workflow_dispatch:
-    inputs:
-      enable_obs:
-        description: '是否编译 OBS(FFmpeg) 支持（第一次请留 0，编译必定成功）'
-        required: false
-        default: '0'
-        type: choice
-        options: ['1', '0']
 
 env:
-  # GitHub Pages 部署：仓库名 vcam → 基地址 https://quite85.github.io/vcam
-  # 所以 DOMAIN=quite85.github.io、REPO_PATH=/vcam
+  THEOS_SDKS_TAG: master-146e41f
+  VCAM_SDK_VERSION: '16.5'
   DOMAIN: quite85.github.io
   REPO_PATH: /vcam
-  ORIGIN: VCam Repo
-  LABEL: VCam Repo
-  VCAM_ENABLE_OBS: ${{ github.event.inputs.enable_obs || '0' }}
-  # Theos 不自带 iOS SDK，macOS 运行器上也没有 iPhoneOS SDK。
-  # 必须显式指定一个我们下载到 $THEOS/sdks/ 的版本，否则 make 会
-  # 在 before-all 阶段报「You do not have any SDKs in ...」并 exit 1。
-  VCAM_SDK_VERSION: '16.5'
-  THEOS_SDKS_TAG: 'master-146e41f'   # theos/sdks 的 release 标签（官方预编译 SDK）
 
 permissions:
   contents: write
@@ -51,11 +33,12 @@ permissions:
   id-token: write
 
 concurrency:
-  group: vcam-publish
+  group: vcam-build-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
   build:
+    name: 构建
     runs-on: macos-latest
     steps:
       - name: 检出代码
@@ -65,258 +48,106 @@ jobs:
         run: |
           set -e
           export THEOS="$HOME/theos"
-          git clone --recursive https://github.com/theos/theos.git "$THEOS"
+          if [ ! -d "$THEOS" ]; then
+            git clone --recursive --depth 1 https://github.com/theos/theos.git "$THEOS"
+          fi
           echo "THEOS=$THEOS" >> "$GITHUB_ENV"
           echo "$THEOS/bin" >> "$GITHUB_PATH"
-          # ldid（签名 iOS 二进制必需）
-          brew install ldid dpkg xz bzip2 || true
+          ls "$THEOS" | head -10
 
-      - name: 下载 iOS SDK 到 $THEOS/sdks（关键，缺这一步必定编译失败）
+      - name: 安装 ldid
+        run: |
+          brew install ldid 2>/dev/null || true
+          which ldid || echo "ldid 不可用（Theos 会用自带方式签名）"
+
+      - name: 下载 iOS SDK 到 $THEOS/sdks（必须，否则编译直接失败）
         run: |
           set -e
           export THEOS="$HOME/theos"
-          mkdir -p "$THEOS/sdks"
           SDK="iPhoneOS${VCAM_SDK_VERSION}.sdk"
-          URL="https://github.com/theos/sdks/releases/download/${THEOS_SDKS_TAG}/${SDK}.tar.xz"
-          echo "下载 $URL"
-          curl -fL --retry 3 -o /tmp/${SDK}.tar.xz "$URL"
-          tar -xJf /tmp/${SDK}.tar.xz -C "$THEOS/sdks"
-          # 校验
-          if [ ! -d "$THEOS/sdks/${SDK}" ]; then
-            echo "::error::SDK 解压后目录不存在：$THEOS/sdks/${SDK}"
-            ls -la "$THEOS/sdks"
+          mkdir -p "$THEOS/sdks"
+          if [ -d "$THEOS/sdks/$SDK" ]; then
+            echo "SDK 已存在"
+          else
+            URL="https://github.com/theos/sdks/releases/download/${THEOS_SDKS_TAG}/${SDK}.tar.xz"
+            echo "下载 $URL"
+            curl -fL --retry 3 -o "/tmp/$SDK.tar.xz" "$URL"
+            tar -xJf "/tmp/$SDK.tar.xz" -C "$THEOS/sdks"
+          fi
+          if [ ! -d "$THEOS/sdks/$SDK" ]; then
+            echo "::error::SDK 解压后目录不存在"
             exit 1
           fi
-          echo "✅ 已安装 SDK："
-          ls -1 "$THEOS/sdks"
-          ls "$THEOS/sdks/${SDK}" | head -10
+          echo "✅ SDK 就绪: $THEOS/sdks/$SDK"
 
-      - name: 安装 FFmpeg 头文件与静态库（可选）
-        if: env.VCAM_ENABLE_OBS == '1'
-        run: |
-          set -e
-          export THEOS="$HOME/theos"
-          # 这里有两条路线，任选其一：
-          #  A) 用社区脚本从源码构建（慢，约 20 分钟）
-          #  B) 从你自己的 release / 制品仓库下载预编译产物
-          #
-          # 下面默认走 B，请把 URL 换成你自己的预编译包。
-          mkdir -p "$THEOS/vendor/include" "$THEOS/vendor/lib"
-          if [ -n "${VCAM_FFMPEG_URL:-}" ]; then
-            curl -L "$VCAM_FFMPEG_URL" -o /tmp/ffmpeg.tar.gz
-            tar -xzf /tmp/ffmpeg.tar.gz -C /tmp
-            ./scripts/ffmpeg-deps.sh /tmp/ffmpeg
-          else
-            echo "::warning::未配置 VCAM_FFMPEG_URL，本次将退化为 VCAM_ENABLE_OBS=0 构建轻量包"
-            echo "VCAM_ENABLE_OBS=0" >> "$GITHUB_ENV"
-          fi
-
-      - name: 生成图标
+      - name: 生成 Sileo 源图标（缺失时）
         run: |
           set +e
-          chmod +x scripts/*.sh
-          # 仓库里已经提交了一份可用的 repo/CydiaIcon.png（由 scripts/make-icon.ps1 生成）。
-          # 这里只在它缺失时才尝试用 make-icon.sh 重新生成 ——
-          # 之前无条件执行，而 make-icon.sh 依赖 python3/ImageMagick 在本机可能失败，
-          # 结果是图标时有时无（线上 CydiaIcon.png 一度 404）。
+          chmod +x scripts/*.sh 2>/dev/null || true
           if [ -f repo/CydiaIcon.png ]; then
-            echo "repo/CydiaIcon.png 已存在（$(wc -c < repo/CydiaIcon.png) 字节），跳过生成"
+            echo "repo/CydiaIcon.png 已存在（$(wc -c < repo/CydiaIcon.png) 字节），跳过"
           else
-            echo "repo/CydiaIcon.png 缺失，尝试生成…"
-            ./scripts/make-icon.sh 256 || echo "::warning::图标生成失败，Sileo 源列表将没有自定义图标"
+            ./scripts/make-icon.sh 256 || echo "::warning::图标生成失败，不影响安装"
           fi
-          ls -l repo/CydiaIcon.png 2>/dev/null || echo "（最终仍无图标文件）"
+          exit 0
 
-      - name: 清理 layout（实际内容由 build.sh 按变体填充）
+      - name: 准备 layout
         run: |
           set -e
-          # ⚠️ layout/ 下的**所有**文件都会被原样打进 deb（安装到设备），
-          #    所以放在这里的只能是"必须安装到设备的东西"。
-          #    文档、.gitkeep 之类的辅助文件绝不能放在 layout/ 里 ——
-          #    曾经因此让 deb 里多出 README.txt 和 .gitkeep 两个垃圾文件。
-          #
-          # 从 v1.0.1 起 layout/ 的内容**完全由 scripts/build.sh 决定**：
-          #   · 安全版  → filters/VCam-mediaserverd.plist.disabled（空 filter）
-          #   · 系统注入版 → filters/VCam-mediaserverd.plist.enabled（注入 mediaserverd）
-          # 这样同一个 layout 目录能按变体产出两种包，各自只装自己需要的 filter。
+          # layout/ 下的每个文件都会被原样打进 deb 并安装到设备。
+          # 这里刻意保持为空：本工程不需要额外安装任何 filter
+          # （VCam.plist 与 tweak 同名，Theos 会自动安装）。
           rm -rf layout
-          mkdir -p layout/Library/MobileSubstrate/DynamicLibraries
-          echo "layout 已清空（由 build.sh 在打包每个变体前填充）"
-          find layout -type f || true
-
-      - name: Logos 预检（诊断用，失败不阻塞编译）
-        id: logoscheck
-        continue-on-error: true
-        run: |
-          # 这一步检查 Tweak.x 经过 Logos 之后生成代码的 6 项问题。
-          # 起因：曾经把 #import 写在 %hook 之后，Logos 把它塞进方法体，
-          #       logos.pl 退出码是 0，直到 clang 编译才报出很难懂的错。
-          #
-          # ⚠️ 设计要点：这是**诊断工具**，用 continue-on-error: true。
-          #    它自己的 bug 绝不能阻塞真正的编译 ——
-          #    之前就是因为把预检放在编译前且不忽略失败，
-          #    预检脚本里一个 set -u 的变量名问题把整个构建堵死了。
-          chmod +x scripts/precheck-logos.sh || true
-          ./scripts/precheck-logos.sh 2>&1 | tee -a /tmp/vcam-full-build.log || {
-            echo "::warning::Logos 预检未通过（见上方输出）。编译仍会继续。"
-            exit 0
-          }
-
-      - name: 语法预检（主 tweak 的大文件，编译前快速暴露语法错误）
-        continue-on-error: true
-        run: |
-          # 目的：Theos 生成 .mi 中间文件时用的是占位源，clang 报错会指向
-          #      "virtual" 文件名、行号也对不上，很难定位。
-          #      这里先对真实源文件跑一遍 -fsyntax-only，报错位置精确到文件:行:列。
-          #
-          # ⚠️ set +e：这一步是**诊断工具**，绝不能因为某个外部命令返回非 0
-          #    就把整步标成失败（GitHub 的 run 默认带 -e）。
-          #    全部失败判定都走下面的 FAILED 变量。
-          set +e
-          export THEOS="$HOME/theos"
-          SDK="$THEOS/sdks/iPhoneOS${VCAM_SDK_VERSION}.sdk"
-          [ -d "$SDK" ] || SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
-          echo "使用 SDK: $SDK"
-
-          COMMON="-fsyntax-only -fobjc-arc -x objective-c
-                  -isysroot $SDK -miphoneos-version-min=15.0
-                  -I. -ICore -IUI -IMedia -IMic
-                  -I$THEOS/vendor/include
-                  -F$SDK/System/Library/Frameworks
-                  -F$SDK/System/Library/PrivateFrameworks
-                  -Wno-everything
-                  -fmodules -fobjc-weak"
-          FRAMEWORKS=""
-          for f in Foundation UIKit AVFoundation CoreMedia CoreVideo AudioToolbox \
-                   VideoToolbox CoreImage ImageIO Photos PhotosUI QuartzCore \
-                   MediaPlayer Accelerate UniformTypeIdentifiers; do
-            FRAMEWORKS="$FRAMEWORKS -framework $f"
-          done
-
-          FAILED=0
-          OKCOUNT=0
-          for src in Core/VCamConfig.m Core/VCamStateStore.m Core/VCamPixelBufferUtils.m \
-                     Core/VCamFrameSource.m Core/VCamImageSource.m Core/VCamVideoSource.m \
-                     Core/VCamConcurrentQueue.m Core/VCamOBSAddress.m Core/VCamCore.m \
-                     Core/VCamOBSSource_stub.m \
-                     UI/VCamPanel.m UI/VCamPickerController.m UI/VCamVolumeHook.m \
-                     UI/VCamVideoDataOutputProxy.m UI/VCamPreviewOverlay.m UI/VCamHUD.m \
-                     Media/VCamMovieFileInjector.m Media/VCamPhotoOutputInjector.m \
-                     Mic/VCamMicInjector.m; do
-            rm -f /tmp/synerr.txt
-            # shellcheck disable=SC2086
-            xcrun -sdk iphoneos clang $COMMON $FRAMEWORKS "$src" 2>/tmp/synerr.txt
-            rc=$?
-            if [ -s /tmp/synerr.txt ] || [ "$rc" -ne 0 ]; then
-              echo "----- ${src} （clang 退出码 ${rc}）-----"
-              cat /tmp/synerr.txt
-              FAILED=1
-            else
-              OKCOUNT=$((OKCOUNT + 1))
-            fi
-          done
-          echo "语法预检：通过 ${OKCOUNT} 个文件，失败 ${FAILED}（1 = 有文件报错）"
-          if [ "$FAILED" -ne 0 ]; then
-            echo "::warning::语法预检发现问题（见上方 file:line:col）。正式编译仍会继续。"
-          fi
-          exit 0
-
-      - name: 全量语法收集（一次列出所有文件的全部错误）
-        continue-on-error: true
-        run: |
-          # 为什么需要这一步：
-          #   Theos 生成 .mi 中间文件时用「占位源文件」，于是
-          #     · 报错文件名显示成 "virtual"，行号与真实文件对不上
-          #     · make 遇到第一个出错文件就停，一次只暴露一个文件
-          #     · 同一条错误被 arm64 / arm64e 各报一遍
-          #   排错因此要来回很多轮。
-          # 这一步把 Logos 预处理后的 Tweak.m 与全部主 tweak 源文件
-          # 一次性喂给 clang -fsyntax-only，汇总出全部错误。
-          set +e
-          export THEOS="$HOME/theos"
-          chmod +x scripts/collect-compile-errors.sh || true
-          ./scripts/collect-compile-errors.sh 2>&1 | tee -a /tmp/vcam-full-build.log
-          exit 0
+          mkdir -p layout
+          echo "layout 已清空（本工程不需要额外文件）"
 
       - name: 编译两个 deb
         id: builddeb
         run: |
           set +e
-          chmod +x scripts/build.sh
-          ./scripts/build.sh 2>&1 | tee /tmp/vcam-full-build.log
+          export THEOS="$HOME/theos"
+          export PATH="$THEOS/bin:$PATH"
+          chmod +x scripts/*.sh
+          ./scripts/build.sh 2>&1 | tee /tmp/vcam-build.log
           RC=${PIPESTATUS[0]}
-          echo "build.sh 退出码 = $RC" | tee -a /tmp/vcam-full-build.log
-          # 把每个变体的日志也收进统一文件，方便失败时下载排查
-          for f in /tmp/vcam-build-rootful.log /tmp/vcam-build-rootless.log; do
-            [ -f "$f" ] && { echo "" >> /tmp/vcam-full-build.log; cat "$f" >> /tmp/vcam-full-build.log; }
-          done
-          if [ $RC -ne 0 ]; then
-            echo "::error::编译失败，退出码 ${RC}。完整日志见 artifact: vcam-build-logs"
+          echo ""
+          echo "--- build.sh 退出码 = $RC ---"
+          echo "--- 产物 ---"
+          ls -lh packages/ 2>/dev/null
+          if [ "$RC" -ne 0 ]; then
+            echo "::error::编译失败，退出码 $RC"
             exit $RC
           fi
-          echo "--- 产物 ---"
-          ls -lh packages/
-          echo "--- 抽查 deb 内容（确认 filter、路径、中文字段）---"
-          for d in packages/*.deb; do
-            echo "== $d"
-            dpkg-deb -c "$d" | grep -i mobileSubstrate || true
-            dpkg-deb -f "$d" Package Version Architecture Depends || true
-          done
 
       - name: 上传编译日志（仅失败时）
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: vcam-build-logs
-          path: /tmp/vcam-full-build.log
+          path: /tmp/vcam-build.log
           if-no-files-found: warn
           retention-days: 7
-
-      - name: 构建 Stage1 诊断包（零 hook，供 Sileo 源直接安装）
-        run: |
-          set +e
-          # 为什么把诊断包也放进正式源：
-          #   用户在手机上装 deb 很麻烦（需要 Filza 或用 Sileo 打开共享菜单），
-          #   放进源里就能像普通插件一样点安装。
-          #   Stage1 是**零 hook** 的最小注入验证包（只写一行日志、
-          #   filter 只列设置 App），风险极小，适合放在源里供排查使用。
-          #
-          # ⚠️ 必须复制到 **packages/**，不能直接放 repo/debs/。
-          #    因为 make-repo.sh 第 1 步会先 `rm -f debs/*.deb` 再从 packages/
-          #    全量拷贝 —— 直接放 debs/ 的会被清掉。
-          echo "=== 构建 Stage1 ==="
-          cd experiments/stage1
-          make package FINALPACKAGE=1 ARCHS=arm64 THEOS_PACKAGE_SCHEME=rootless 2>&1 | tail -12
-          echo ""
-          D=$(ls -t packages/*.deb 2>/dev/null | head -1)
-          if [ -z "$D" ]; then
-            echo "::warning::Stage1 构建失败，跳过（不影响正式包）"
-            exit 0
-          fi
-          echo "  Stage1 产物: $D"
-          cp -f "$D" "$GITHUB_WORKSPACE/packages/"
-          echo "  packages/ 内容（将被 make-repo.sh 扫进源）："
-          ls -la "$GITHUB_WORKSPACE/packages/" | sed 's/^/    /'
-          exit 0
 
       - name: 生成 APT 源
         run: |
           set -e
           chmod +x scripts/make-repo.sh
-          echo "=== 生成前：packages/ 里的包 ==="
-          ls -la packages/ 2>/dev/null || echo "  （空）"
+          echo "=== packages/ ==="
+          ls -la packages/ 2>/dev/null || echo "（空）"
           DOMAIN="${{ env.DOMAIN }}" REPO_PATH="${{ env.REPO_PATH }}" \
             ./scripts/make-repo.sh
-          echo "--- Packages/GitHub Pages 内容 ---"
-          ls -R repo | head -50
+          echo "--- repo 内容 ---"
+          ls -R repo | head -40
 
       - name: 上传 deb 制品
         uses: actions/upload-artifact@v4
         with:
           name: vcam-debs
           path: packages/*.deb
+          if-no-files-found: warn
 
       - name: 创建 GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
           files: packages/*.deb
@@ -330,12 +161,13 @@ jobs:
           path: repo
 
   deploy-pages:
+    name: 部署到 GitHub Pages
     needs: build
     runs-on: ubuntu-latest
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - name: 部署到 GitHub Pages
+      - name: 部署
         id: deployment
         uses: actions/deploy-pages@v4
