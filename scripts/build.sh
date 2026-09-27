@@ -103,6 +103,13 @@ build_one() {
 
     make clean >/dev/null 2>&1 || true
 
+    # 清掉 Theos 上一轮打包遗留的 deb。
+    # 不清的话，第二次打包时 `ls -t $THEOS/packages/*.deb` 会把上一次
+    # （另一个 scheme）的 deb 当成"最新产物"，导致：
+    #   · packages/ 里同时出现 Theos 默认命名的 deb 和我们的 -rootless 副本
+    #   · Release 资产里挂上 3~4 个内容重复、名字不同的 deb
+    rm -f "$THEOS"/packages/*.deb "$ROOT_DIR"/packages/*.deb 2>/dev/null || true
+
     # 每次切换 scheme 都要重新编译：rootless 会改变安装路径前缀
     #
     # ⚠️ 这里刻意不用数组传 THEOS_PACKAGE_SCHEME。
