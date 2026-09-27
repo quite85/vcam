@@ -42,12 +42,6 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic, readonly) uint64_t droppedFrames;
 /// 是否正在接收（有包进来）
 @property (nonatomic, readonly) BOOL receiving;
-/// 最近一次错误
-@property (nonatomic, readonly, copy, nullable) NSString *lastError;
-/// 本机所有可用于推流的地址（Wi-Fi / USB 网络共享），UI 上直接显示给用户复制
-+ (NSArray<NSString *> *)localIPv4Addresses;
-/// 生成给用户看的完整推流地址，例如 udp://192.168.1.20:5600
-+ (NSString *)pushURLForTransport:(NSString *)transport port:(uint16_t)port;
 
 @end
 

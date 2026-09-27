@@ -14,6 +14,7 @@
 #import "VCamPanel.h"
 #import "VCamPickerController.h"
 #import "VCamCore.h"
+#import "VCamOBSAddress.h"
 #import "VCamOBSSource.h"
 #import "VCamHUD.h"
 
@@ -408,7 +409,7 @@ typedef NS_ENUM(NSInteger, VCamButtonStyle) {
     [st setAudioKind:VCamAudioSourceOBS];
     [[VCamCore shared] reloadFromState];
 
-    NSString *url = [VCamOBSSource pushURLForTransport:st.transport port:st.port];
+    NSString *url = [VCamOBSAddress pushURLForTransport:st.transport port:st.port];
     UIPasteboard.generalPasteboard.string = url;
     [VCamHUD show:[NSString stringWithFormat:@"OBS 模式已开启\n推流地址（已复制）：\n%@", url]
           success:YES];
@@ -472,7 +473,7 @@ typedef NS_ENUM(NSInteger, VCamButtonStyle) {
 
 - (void)_copyAddress {
     VCamStateStore *st = [VCamStateStore shared];
-    NSString *url = [VCamOBSSource pushURLForTransport:st.transport port:st.port];
+    NSString *url = [VCamOBSAddress pushURLForTransport:st.transport port:st.port];
     UIPasteboard.generalPasteboard.string = url;
     [VCamHUD show:[NSString stringWithFormat:@"已复制：%@", url] success:YES];
 }
@@ -506,8 +507,8 @@ typedef NS_ENUM(NSInteger, VCamButtonStyle) {
     self.statusLabel.text = s;
 
     if (st.mode == VCamModeOBS) {
-        NSString *url = [VCamOBSSource pushURLForTransport:st.transport port:st.port];
-        NSArray<NSString *> *all = [VCamOBSSource localIPv4Addresses];
+        NSString *url = [VCamOBSAddress pushURLForTransport:st.transport port:st.port];
+        NSArray<NSString *> *all = [VCamOBSAddress localIPv4Addresses];
         NSMutableString *a = [NSMutableString string];
         [a appendFormat:@"推流地址（长按复制）\n%@\n", url];
         if (all.count > 1) {
