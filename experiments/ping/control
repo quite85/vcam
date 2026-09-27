@@ -1,0 +1,22 @@
+Package: com.quite85.vcamping
+Name: VCam 注入测试 (Ping)
+Version: 1.0.0
+Architecture: iphoneos-arm64
+Description: 诊断用最小注入测试。只对「设置」App 生效，仅写一行日志，
+ 不 hook 任何方法、不碰相机、不碰系统进程（尤其不碰 SpringBoard）。
+ .
+ 用途：回答唯一一个问题 —— "注入我们编出来的 dylib 本身会不会黑屏？"
+ .
+ · 若打开「设置」正常  → 注入机制没问题，黑屏来自相机/SpringBoard 那条路
+ · 若打开「设置」就黑屏 → 问题在 dylib 加载本身，需要换技术路线
+ .
+ 风险极小：filter 只列了设置 App，即使有问题也只是设置 App 打不开，
+ 不会黑屏（因为完全不注入 SpringBoard）。
+ .
+ 日志位置：/var/mobile/Library/VirtualCamera/ping.log
+Homepage: https://github.com/quite85/vcam
+Maintainer: quite85 <quite85@users.noreply.github.com>
+Author: quite85 <quite85@users.noreply.github.com>
+Section: Tweaks
+Depends: firmware (>= 15.0), mobilesubstrate | ellekit
+Tag: purpose::extension, role::hacker
