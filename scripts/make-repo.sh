@@ -134,43 +134,74 @@ fi
 # Sileo 会直接报"哈希校验失败"或"文件大小不匹配"。
 if command -v python3 >/dev/null 2>&1; then
 python3 - <<'PY'
-import hashlib, os, re, sys
+import hashlib, os, sys
+
+# ---------------------------------------------------------------------------
+# 作用：为 Packages 的每个条目补算/校正 Size、MD5sum、SHA256。
+#
+# ⚠️ 这里曾经有一个会**损坏 Packages 格式**的 bug：
+#    旧实现把所有行塞进一个 (key, value) 列表，遇到"不带冒号"的行
+#    （也就是 Description 的续行，如 " 把调用系统相机的 App ..."）
+#    就记成 ("", None)，重建时用 "" 拼回去 ——
+#    结果 Description 的所有续行被**压进单行**，变成：
+#        Description: 很长的一行...Tag: purpose::extension, role::hacker
+#    多行的 Tag 被吞进 Description，Sileo 解析就会出错。
+#
+#    现在把"带冒号的字段行"与其后的"缩进续行"当作一个整体处理，原样保留。
+# ---------------------------------------------------------------------------
 
 path = "Packages"
 with open(path, "r", encoding="utf-8", errors="replace") as f:
-    blocks = f.read().split("\n\n")
+    raw = f.read()
 
+blocks = raw.split("\n\n")
 out = []
+fixed = 0
+missing = 0
+malformed = 0
+
 for blk in blocks:
     if not blk.strip():
         continue
-    lines = [l for l in blk.split("\n") if l.strip()]
-    fields = {}
-    order = []
-    for l in lines:
-        if ":" not in l:
-            order.append((l, None))
+
+    # --- 解析：字段 + 其续行 ---
+    entries = []          # [(key_or_None, [原始行...])]
+    for line in blk.split("\n"):
+        if not line.strip():
             continue
-        k, v = l.split(":", 1)
-        fields[k.strip()] = v.strip()
-        order.append((k.strip(), v.strip()))
+        if line[:1] in (" ", "\t"):
+            # 续行：挂到上一个字段
+            if entries:
+                entries[-1][1].append(line)
+            continue
+        if ":" in line:
+            key = line.split(":", 1)[0].strip()
+            entries.append((key, [line]))
+        else:
+            # 不带冒号又不缩进：格式异常，原样保留
+            malformed += 1
+            entries.append((None, [line]))
+
+    fields = {}
+    for key, lines in entries:
+        if key and key not in fields:
+            fields[key] = lines[0].split(":", 1)[1].strip()
 
     fn = fields.get("Filename", "")
-    if not fn:
-        # 没有 Filename 就原样输出
-        out.append("\n".join(l for l, _ in order))
-        continue
-    local = fn.lstrip("./")
-    if not os.path.exists(local):
-        # 也试试 repo 相对路径
-        alt = os.path.join(os.path.dirname(path), local)
+    local = fn.lstrip("./") if fn else ""
+    if local and not os.path.exists(local):
+        alt = os.path.join(os.path.dirname(path) or ".", local)
         if os.path.exists(alt):
             local = alt
-        else:
-            sys.stderr.write(f"⚠️  Packages 里引用了不存在的文件: {fn}\n")
-            out.append("\n".join(l for l, _ in order))
-            continue
 
+    if not local or not os.path.exists(local):
+        if fn:
+            sys.stderr.write(f"⚠️  Packages 里引用了不存在的文件: {fn}\n")
+            missing += 1
+        out.append("\n".join(l for _, ls in entries for l in ls))
+        continue
+
+    # --- 计算校验值 ---
     size = os.path.getsize(local)
     sha = hashlib.sha256()
     md5 = hashlib.md5()
@@ -179,31 +210,52 @@ for blk in blocks:
             sha.update(chunk)
             md5.update(chunk)
 
-    fields["Filename"] = fn
-    fields["Size"] = str(size)
-    fields["SHA256"] = sha.hexdigest()
-    fields["MD5sum"] = md5.hexdigest()
+    newvals = {
+        "Filename": fn,
+        "Size": str(size),
+        "MD5sum": md5.hexdigest(),
+        "SHA256": sha.hexdigest(),
+    }
 
-    # 输出顺序：先保留原有键顺序，再补齐缺失的键
+    # --- 重建：保留 key 的原始顺序与续行，只替换这几个字段的值 ---
     seen = set()
     final = []
-    for k, _ in order:
-        if k is None:
-            final.append("")
+    for key, lines in entries:
+        if key is None:
+            final.extend(lines)
             continue
-        if k in seen:
+        if key in seen:
             continue
-        seen.add(k)
-        if k in fields:
-            final.append(f"{k}: {fields[k]}")
-    for k in ("Filename", "Size", "MD5sum", "SHA256"):
-        if k not in seen and k in fields:
-            final.append(f"{k}: {fields[k]}")
+        seen.add(key)
+        if key in newvals:
+            final.append(f"{key}: {newvals[key]}")
+        else:
+            final.extend(lines)          # ← 连同续行一起保留
+    for key in ("Filename", "Size", "MD5sum", "SHA256"):
+        if key not in seen:
+            final.append(f"{key}: {newvals[key]}")
+
     out.append("\n".join(final))
+    fixed += 1
 
 with open(path, "w", encoding="utf-8") as f:
     f.write("\n\n".join(out) + "\n")
-print(f"✅ 已为 {len([b for b in out if b.strip()])} 个条目校验 Size/MD5sum/SHA256")
+
+print(f"✅ 已为 {fixed} 个条目校验 Size/MD5sum/SHA256")
+if missing:
+    sys.stderr.write(f"⚠️  {missing} 个条目引用的 deb 不存在\n")
+if malformed:
+    sys.stderr.write(f"⚠️  {malformed} 行格式异常（无冒号且未缩进）\n")
+
+# 自检：确认没有字段被压成超长单行（Description 正常应在 200 字符内）
+bad = 0
+with open(path, encoding="utf-8") as f:
+    for line in f:
+        if line.startswith("Description:") and len(line.rstrip("\n")) > 400:
+            bad += 1
+if bad:
+    sys.stderr.write(f"❌ {bad} 个 Description 字段超长，说明续行处理仍有问题\n")
+    sys.exit(1)
 PY
 else
     echo "⚠️  没有 python3，跳过校验字段补算（如果 dpkg-scanpackages 已生成则可忽略）"
