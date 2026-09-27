@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>虚拟摄像头 · Sileo 软件源</title>
+<link rel="icon" href="CydiaIcon.png">
+<style>
+  :root {
+    --bg: #0f1115;
+    --card: #181b22;
+    --line: #262a33;
+    --fg: #e8eaed;
+    --dim: #9aa0a6;
+    --accent: #4c8dff;
+    --ok: #34c759;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #f5f6f8;
+      --card: #ffffff;
+      --line: #e3e5e9;
+      --fg: #1a1c20;
+      --dim: #5f6368;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 28px 18px 60px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 16px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI",
+          "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    -webkit-text-size-adjust: 100%;
+  }
+  .wrap { max-width: 720px; margin: 0 auto; }
+  header { text-align: center; margin-bottom: 28px; }
+  .icon {
+    width: 88px; height: 88px; border-radius: 20px;
+    background: linear-gradient(145deg, #4c8dff, #7b5cff);
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 44px; box-shadow: 0 8px 28px rgba(76,141,255,.35);
+  }
+  h1 { font-size: 26px; margin: 16px 0 6px; letter-spacing: .5px; }
+  .sub { color: var(--dim); font-size: 14px; margin: 0; }
+  .card {
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: 14px; padding: 18px 20px; margin: 16px 0;
+  }
+  h2 { font-size: 16px; margin: 0 0 12px; display: flex; align-items: center; gap: 8px; }
+  h2 .n {
+    width: 22px; height: 22px; border-radius: 50%; background: var(--accent);
+    color: #fff; font-size: 13px; display: inline-flex;
+    align-items: center; justify-content: center; flex: none;
+  }
+  code, .url {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 13.5px; word-break: break-all;
+  }
+  .url {
+    display: block; background: rgba(76,141,255,.1); color: var(--accent);
+    border: 1px solid rgba(76,141,255,.28); border-radius: 9px;
+    padding: 11px 13px; margin: 4px 0 0; user-select: all;
+  }
+  ol, ul { padding-left: 22px; margin: 8px 0; }
+  li { margin: 6px 0; }
+  .feat { list-style: none; padding: 0; }
+  .feat li { display: flex; gap: 9px; align-items: flex-start; }
+  .feat li::before { content: "✓"; color: var(--ok); font-weight: 700; }
+  .tbl { width: 100%; border-collapse: collapse; font-size: 14px; }
+  .tbl th, .tbl td { text-align: left; padding: 9px 6px; border-bottom: 1px solid var(--line); }
+  .tbl th { color: var(--dim); font-weight: 600; }
+  .tbl tr:last-child td { border-bottom: none; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .note {
+    background: rgba(255,180,0,.09); border: 1px solid rgba(255,180,0,.3);
+    border-radius: 10px; padding: 12px 14px; font-size: 14px; color: var(--fg);
+  }
+  footer { text-align: center; color: var(--dim); font-size: 12.5px; margin-top: 30px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="icon">🎥</div>
+    <h1>虚拟摄像头</h1>
+    <p class="sub">iOS 15.0 – 16.6.1 · 系统级虚拟相机 + 虚拟麦克风</p>
+  </header>
+
+  <div class="card">
+    <h2><span class="n">1</span> 添加软件源</h2>
+    <p style="margin:0 0 6px;color:var(--dim);font-size:14px">
+      在 Sileo 里点「软件源」→ 右上角 <code>+</code> → 粘贴：
+    </p>
+    <span class="url">https://quite85.github.io/vcam</span>
+  </div>
+
+  <div class="card">
+    <h2><span class="n">2</span> 安装</h2>
+    <p style="margin:0 0 6px;color:var(--dim);font-size:14px">
+      刷新源 → 搜索「虚拟摄像头」→ 安装 → Respring。
+    </p>
+    <div class="note">
+      ⚠️ 添加前请先卸载其它同名插件，避免同名注入文件互相覆盖。
+    </div>
+  </div>
+
+  <div class="card">
+    <h2><span class="n">3</span> 使用</h2>
+    <ol>
+      <li>打开<strong>系统相机</strong></li>
+      <li><strong>短按</strong>一下「音量减」→ 弹出悬浮小窗</li>
+      <li>点 <strong>🎬 选择视频</strong> → 允许相册权限 → 选一个视频</li>
+      <li>相机画面立刻切换成该视频（无需杀进程 / respring）</li>
+    </ol>
+    <p style="margin:10px 0 0;color:var(--dim);font-size:14px">
+      音量键：短按弹窗（音量会自动还原）· 长按才真正调音量 · 通话中不拦截。
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>功能</h2>
+    <ul class="feat">
+      <li>相册视频循环替换相机画面（含音轨）</li>
+      <li>相册图片作为动态静帧</li>
+      <li>虚拟麦克风：用视频音轨替换真实麦克风</li>
+      <li>旋转 / 镜像 / 横竖屏 / 循环 / 唇形同步</li>
+      <li>一键禁用，完整恢复硬件相机与麦克风</li>
+      <li>mediaserverd + AVFoundation 双层注入</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h2>包信息</h2>
+    <table class="tbl">
+      <tr><th>包标识</th><td><code>com.quite85.virtualcamera</code></td></tr>
+      <tr><th>版本</th><td>1.0.0</td></tr>
+      <tr><th>系统要求</th><td>iOS 15.0 – 16.6.1</td></tr>
+      <tr><th>依赖</th><td>mobilesubstrate 或 ellekit</td></tr>
+      <tr><th>架构</th><td>iphoneos-arm64（rootless / rootful）</td></tr>
+      <tr><th>作者</th><td>quite85</td></tr>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>链接</h2>
+    <ul>
+      <li><a href="https://github.com/quite85/vcam">源码仓库</a></li>
+      <li><a href="https://github.com/quite85/vcam/releases">所有版本 / 直接下载 deb</a></li>
+      <li><a href="depiction/vcam.html">包详情页</a></li>
+    </ul>
+  </div>
+
+  <footer>
+    本软件源由 GitHub Pages 托管 · 仅供个人内容创作与直播替代画面使用
+  </footer>
+
+</div>
+</body>
+</html>

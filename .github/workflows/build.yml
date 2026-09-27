@@ -113,8 +113,19 @@ jobs:
 
       - name: 生成图标
         run: |
+          set +e
           chmod +x scripts/*.sh
-          ./scripts/make-icon.sh 256 || true
+          # 仓库里已经提交了一份可用的 repo/CydiaIcon.png（由 scripts/make-icon.ps1 生成）。
+          # 这里只在它缺失时才尝试用 make-icon.sh 重新生成 ——
+          # 之前无条件执行，而 make-icon.sh 依赖 python3/ImageMagick 在本机可能失败，
+          # 结果是图标时有时无（线上 CydiaIcon.png 一度 404）。
+          if [ -f repo/CydiaIcon.png ]; then
+            echo "repo/CydiaIcon.png 已存在（$(wc -c < repo/CydiaIcon.png) 字节），跳过生成"
+          else
+            echo "repo/CydiaIcon.png 缺失，尝试生成…"
+            ./scripts/make-icon.sh 256 || echo "::warning::图标生成失败，Sileo 源列表将没有自定义图标"
+          fi
+          ls -l repo/CydiaIcon.png 2>/dev/null || echo "（最终仍无图标文件）"
 
       - name: 把 mediaserverd filter 放进 layout（必须，在编译之前）
         run: |

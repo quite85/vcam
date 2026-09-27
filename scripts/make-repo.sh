@@ -73,6 +73,21 @@ fi
 
 mkdir -p "$DEBS_DIR" "$REPO_DIR/depiction" "$REPO_DIR/icons"
 
+# ---- 0) 软件源图标 ----
+# Sileo 会请求源根目录下的 CydiaIcon.png 作为源列表图标；
+# 缺失只会让图标不显示（不影响安装），但补齐体验更好。
+# 仓库里已提交一份（由 scripts/make-icon.ps1 生成），
+# 若不存在则尝试用 make-icon.sh 现场生成。
+if [ ! -f "$REPO_DIR/CydiaIcon.png" ]; then
+    echo "CydiaIcon.png 缺失，尝试生成…"
+    bash "$(dirname "${BASH_SOURCE[0]}")/make-icon.sh" 256 >/dev/null 2>&1 || true
+fi
+if [ -f "$REPO_DIR/CydiaIcon.png" ]; then
+    echo "源图标: CydiaIcon.png（$(wc -c < "$REPO_DIR/CydiaIcon.png" | tr -d ' ') 字节）"
+else
+    echo "⚠️  源图标缺失（不影响安装，只是 Sileo 源列表没有自定义图标）"
+fi
+
 # ---- 1) 拷贝 deb ----
 # ⚠️ 先把 debs/ 清空再拷贝。
 #    不清的话，上一次构建留下的、本轮已不再生成的 deb 会一直躺在 debs/ 里；
