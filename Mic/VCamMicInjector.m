@@ -15,7 +15,15 @@
 #import <objc/runtime.h>
 #import <os/lock.h>
 #import <dlfcn.h>          // dlsym / dlopen（运行时查找 MSHookFunction）
-#import <substrate.h>      // MSHookFunction 声明（Theos 自带 vendor/include/substrate.h）
+// 说明：这里**不** #import <substrate.h>。
+//   1) 本文件不需要它 —— 所有 hook 入口都用 dlsym 取函数指针
+//      （见下面的 HookFn / VCamAudioUnitSetPropertyFn），
+//      不需要编译期的 MSHookFunction 声明；
+//   2) Theos 自带的 vendor/include/substrate.h 只有一行 `CydiaSubstrate.h`，
+//      而它又用尖括号引用 <CydiaSubstrate/CydiaSubstrate.h>，
+//      需要额外把 $THEOS/vendor/lib 加进 -I 才能解析，CI 上会报
+//        fatal error: 'CydiaSubstrate/CydiaSubstrate.h' file not found
+//      去掉这个 import 后，rootful / rootless / roothide 都不会因此失败。
 
 #pragma mark - 音频数据代理（AVCaptureAudioDataOutput）
 

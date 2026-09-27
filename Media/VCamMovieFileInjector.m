@@ -24,7 +24,12 @@ static const void *kVCamRecSwizzledKey = &kVCamRecSwizzledKey;
 @property (nonatomic, strong, nullable) AVAssetWriterInput *videoInput;
 @property (nonatomic, strong, nullable) AVAssetWriterInput *audioInput;
 @property (nonatomic, strong, nullable) AVAssetWriterInputPixelBufferAdaptor *adaptor;
-@property (nonatomic, assign) dispatch_source_t frameTimer;
+// ⚠️ 必须 strong。dispatch_source_t 在 ARC 下是 Objective-C 对象，
+//    用 assign（= unsafe_unretained）会报：
+//        error: assigning retained object to unsafe_unretained variable;
+//               object will be released after assignment
+//   且运行时定时器会立刻被释放、永远不触发。
+@property (nonatomic, strong) dispatch_source_t frameTimer;
 @property (nonatomic, assign) BOOL running;
 @property (nonatomic, assign) BOOL audioStarted;
 @property (nonatomic, assign) CMTime firstPTS;

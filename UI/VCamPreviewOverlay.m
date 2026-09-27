@@ -20,7 +20,15 @@ static BOOL gPassthrough = NO;
 @property (nonatomic, weak) AVCaptureVideoPreviewLayer *layer;
 @property (nonatomic, strong) CALayer *overlay;
 @property (nonatomic, strong) CATextLayer *hint;
-@property (nonatomic, assign) dispatch_source_t timer;
+// ⚠️ 必须是 strong，不能是 assign。
+//    dispatch_source_t 在 ARC 下是 Objective-C 对象类型，
+//    用 assign（= unsafe_unretained）会报：
+//        error: assigning retained object to unsafe_unretained variable;
+//               object will be released after assignment
+//               [-Werror,-Warc-unsafe-retained-assign]
+//    因为 dispatch_source_create 返回的是 +1 的引用，赋给 unsafe_unretained
+//    变量后会立刻被释放，定时器根本不会触发。
+@property (nonatomic, strong) dispatch_source_t timer;
 @property (nonatomic, assign) BOOL running;
 @end
 
