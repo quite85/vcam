@@ -9,6 +9,7 @@
 #import "VCamPixelBufferUtils.h"
 #import <QuartzCore/QuartzCore.h>
 #import <os/lock.h>
+#import <objc/runtime.h>   // objc_getAssociatedObject / objc_setAssociatedObject
 
 static const void *kVCamOverlayKey = &kVCamOverlayKey;
 static const void *kVCamOverlayTimerKey = &kVCamOverlayTimerKey;

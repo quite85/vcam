@@ -6,6 +6,8 @@
 #import "VCamImageSource.h"
 #import "VCamConfig.h"
 #import <ImageIO/ImageIO.h>
+#import <os/lock.h>   // os_unfair_lock / OS_UNFAIR_LOCK_INIT 在这里，漏了会报
+                      // "declaration of os_unfair_lock must be imported from module Darwin.os.lock"
 
 @implementation VCamImageSource {
     dispatch_source_t _timer;

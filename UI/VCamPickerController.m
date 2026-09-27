@@ -12,6 +12,7 @@
 #import <Photos/Photos.h>
 #import <AVFoundation/AVFoundation.h>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
+#import <stdlib.h>    // arc4random()
 
 @interface VCamPickerController () <PHPickerViewControllerDelegate>
 @property (nonatomic, copy, nullable) VCamPickerCompletion completion;

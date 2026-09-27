@@ -14,6 +14,8 @@
 #import <MediaPlayer/MediaPlayer.h>
 #import <objc/runtime.h>
 #import <os/lock.h>
+#import <dlfcn.h>          // dlsym / dlopen（运行时查找 MSHookFunction）
+#import <substrate.h>      // MSHookFunction 声明（Theos 自带 vendor/include/substrate.h）
 
 #pragma mark - 音频数据代理（AVCaptureAudioDataOutput）
 

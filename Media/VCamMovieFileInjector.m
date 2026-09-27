@@ -10,6 +10,7 @@
 #import <AVFoundation/AVFoundation.h>
 #import <objc/runtime.h>
 #import <os/lock.h>
+#import <stdlib.h>    // arc4random()
 
 static const void *kVCamRecSwizzledKey = &kVCamRecSwizzledKey;
 

@@ -112,20 +112,29 @@ build_one() {
     #        line 110: scheme_arg[@]: unbound variable
     #    并 exit 1。GitHub 的 macos-latest 运行器用的正是 bash 3.2，
     #    所以这里改成条件拼接参数，兼容所有 bash 版本。
+    #
+    # MAKEFLAGS=-k（keep going）：
+    #    默认 make 在第一个编译错误上就停下，一次只暴露一个文件的错误，
+    #    排查要来回跑很多轮。加 -k 后它会继续编译其余文件，
+    #    把所有错误一次性报出来。退出码仍然非 0，所以不影响失败判定。
     if [ -n "$scheme" ]; then
-        make package FINALPACKAGE=1 \
+        MAKEFLAGS=-k make package FINALPACKAGE=1 \
              VCAM_ENABLE_OBS="$ENABLE_OBS" \
              THEOS_PACKAGE_SCHEME="$scheme" \
              2>&1 | tee "/tmp/vcam-build-$tag.log"
         local make_rc=${PIPESTATUS[0]}
     else
-        make package FINALPACKAGE=1 \
+        MAKEFLAGS=-k make package FINALPACKAGE=1 \
              VCAM_ENABLE_OBS="$ENABLE_OBS" \
              2>&1 | tee "/tmp/vcam-build-$tag.log"
         local make_rc=${PIPESTATUS[0]}
     fi
     if [ "$make_rc" -ne 0 ]; then
         echo "❌ make package 失败（退出码 $make_rc），详见 /tmp/vcam-build-$tag.log"
+        # 把错误条数统计出来，方便一眼看出还剩几个问题
+        local errcount
+        errcount=$(grep -c 'error:' "/tmp/vcam-build-$tag.log" 2>/dev/null || echo 0)
+        echo "   本次编译共出现 $errcount 条 error（-k 模式，已尽量全部报告）"
         return "$make_rc"
     fi
 
