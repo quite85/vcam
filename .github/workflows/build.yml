@@ -200,6 +200,23 @@ jobs:
           fi
           exit 0
 
+      - name: 全量语法收集（一次列出所有文件的全部错误）
+        continue-on-error: true
+        run: |
+          # 为什么需要这一步：
+          #   Theos 生成 .mi 中间文件时用「占位源文件」，于是
+          #     · 报错文件名显示成 "virtual"，行号与真实文件对不上
+          #     · make 遇到第一个出错文件就停，一次只暴露一个文件
+          #     · 同一条错误被 arm64 / arm64e 各报一遍
+          #   排错因此要来回很多轮。
+          # 这一步把 Logos 预处理后的 Tweak.m 与全部主 tweak 源文件
+          # 一次性喂给 clang -fsyntax-only，汇总出全部错误。
+          set +e
+          export THEOS="$HOME/theos"
+          chmod +x scripts/collect-compile-errors.sh || true
+          ./scripts/collect-compile-errors.sh 2>&1 | tee -a /tmp/vcam-full-build.log
+          exit 0
+
       - name: 编译两个 deb
         id: builddeb
         run: |
