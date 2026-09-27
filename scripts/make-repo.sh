@@ -74,6 +74,12 @@ fi
 mkdir -p "$DEBS_DIR" "$REPO_DIR/depiction" "$REPO_DIR/icons"
 
 # ---- 1) 拷贝 deb ----
+# ⚠️ 先把 debs/ 清空再拷贝。
+#    不清的话，上一次构建留下的、本轮已不再生成的 deb 会一直躺在 debs/ 里；
+#    虽然不会进 Packages（scanpackages 只扫存在的文件），
+#    但会让 debs/ 越堆越多、也容易在排查时看错"到底发布了哪些包"。
+rm -f "$DEBS_DIR"/*.deb 2>/dev/null || true
+
 shopt -s nullglob
 DEBS=("$PKG_DIR"/*.deb)
 if [ ${#DEBS[@]} -eq 0 ]; then
@@ -84,9 +90,7 @@ for d in "${DEBS[@]}"; do
     cp -f "$d" "$DEBS_DIR/"
     echo "  + $(basename "$d")"
 done
-
-# 清理 Theos 生成的重复名字（不含架构标记的那个），避免 Packages 里出现重复条目
-if [ -n "${PKG_ID:-}" ]; then :; fi
+echo "  （debs/ 共 $(ls -1 "$DEBS_DIR"/*.deb 2>/dev/null | wc -l | tr -d ' ') 个 deb）"
 
 cd "$REPO_DIR"
 

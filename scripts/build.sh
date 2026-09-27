@@ -103,12 +103,17 @@ build_one() {
 
     make clean >/dev/null 2>&1 || true
 
-    # 清掉 Theos 上一轮打包遗留的 deb。
-    # 不清的话，第二次打包时 `ls -t $THEOS/packages/*.deb` 会把上一次
-    # （另一个 scheme）的 deb 当成"最新产物"，导致：
-    #   · packages/ 里同时出现 Theos 默认命名的 deb 和我们的 -rootless 副本
-    #   · Release 资产里挂上 3~4 个内容重复、名字不同的 deb
-    rm -f "$THEOS"/packages/*.deb "$ROOT_DIR"/packages/*.deb 2>/dev/null || true
+    # 清掉 **Theos 的** packages 目录里上一轮遗留的 deb。
+    #
+    # ⚠️ 注意只清 $THEOS/packages，**不要**清 $ROOT_DIR/packages。
+    #    这正是上一版 build.sh 的 bug 所在：
+    #      原来写的是 rm -f $THEOS/packages/*.deb $ROOT_DIR/packages/*.deb，
+    #      第二轮（rootless）开始时把第一轮（rootful）的产物一并删了，
+    #      于是 make-repo.sh 只扫到一个 deb，
+    #      Packages 里两条记录指向同一个文件（Size/SHA256 相同），
+    #      仓库里只有 rootless 那份，rootful 那条 Filename 直接 404。
+    #    现在每轮只清理 Theos 的输出，我们自己的产物完整保留。
+    rm -f "$THEOS"/packages/*.deb 2>/dev/null || true
 
     # 每次切换 scheme 都要重新编译：rootless 会改变安装路径前缀
     #
@@ -145,9 +150,13 @@ build_one() {
         return "$make_rc"
     fi
 
-    # 取最新生成的 deb
+    # 说明：这里刻意**不再**每轮清空 packages/（见上面的注释）。
+    #   正确做法是每轮打完把 Theos 那份**移走**，
+    #   这样既不会有残留干扰下一轮，也不会丢掉本轮产物。
+
+    # 取本轮生成的 deb（优先我们自己的 packages/，其次 Theos 的）
     local src
-    src="$(ls -t "$THEOS"/packages/*.deb "$ROOT_DIR"/packages/*.deb 2>/dev/null | head -n 1 || true)"
+    src="$(ls -t "$ROOT_DIR"/packages/*.deb "$THEOS"/packages/*.deb 2>/dev/null | head -n 1 || true)"
     if [ -z "$src" ]; then
         echo "❌ $tag 打包失败，请查看 /tmp/vcam-build-$tag.log" >&2
         exit 1
@@ -156,14 +165,7 @@ build_one() {
     local arch_name="iphoneos-arm64"
     local dest="$OUT_DIR/${PKG_ID}_${VERSION}_${arch_name}-${tag}.deb"
     cp -f "$src" "$dest"
-    echo "✅ 产出：$dest"
-
-    # 说明：这里刻意**不再**额外复制一份"不带架构标记"的副本。
-    #   之前为了本地 ad-hoc 安装方便会多留一份，但结果是：
-    #     · Theos 自己产出的原始名字那份也会被 make-repo.sh 扫进 debs/，
-    #     · 加上手动的副本，debs/ 里出现 3~5 个内容相同、名字不同的 deb，
-    #       Packages 里就会出现重复条目，用户不知道该装哪个。
-    #   现在只保留带 -rootful / -rootless 后缀的两个，干净明确。
+    echo "✅ 产出：$(basename "$dest")"
 }
 
 case "$ONLY" in
