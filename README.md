@@ -1,4 +1,4 @@
-# VCam —— iOS 系统级虚拟摄像头 + 虚拟麦克风
+# 虚拟摄像头 —— iOS 系统级虚拟摄像头 + 虚拟麦克风
 
 > 把整机的**摄像头画面**与**麦克风音频**替换成虚拟源。
 > 任意调用系统相机管线的 App（系统相机、FaceTime、微信、QQ、Zoom、
@@ -7,8 +7,6 @@
 > 支持 **iOS 15.0 – 16.6.1**，同时支持 **rootful / rootless（Dopamine、palera1n）**。
 > 无卡密、无联网授权、无 UDID 上传，全部离线本地运行。
 >
-> 参考了 VCam-iOS-16 的**能力范围**（<https://github.com/notaudren/VCam-iOS-16>），
-> 但代码是从零实现的，没有使用任何反编译产物。
 >
 > **⚠️ 使用前请先读文末的「免责声明」。**
 
@@ -39,7 +37,7 @@
 | --- | --- |
 | 插件包名（Package id） | `com.quite85.vcam` |
 | 软件源地址 | `https://quite85.github.io/vcam` |
-| deb 文件名 | `com.quite85.vcam_1.0.0_iphoneos-arm64-rootless.deb` |
+| deb 文件名 | `com.quite85.virtualcamera_1.0.0_iphoneos-arm64-rootless.deb` |
 
 如果你以后想换成自己的域名（例如 `repo.quite85.com`），一次性替换即可：
 
@@ -112,7 +110,7 @@ DOMAIN=quite85.github.io REPO_PATH=/vcam ./scripts/make-repo.sh
    └─────────────────────────────────────────┘
 ```
 
-因此 VCam 做了**两层注入**，互相兜底：
+因此本插件做了**两层注入**，互相兜底：
 
 | 层 | 注入进程 | 插入点 | 作用 |
 | --- | --- | --- | --- |
@@ -124,7 +122,7 @@ DOMAIN=quite85.github.io REPO_PATH=/vcam ./scripts/make-repo.sh
 > 「预览是虚拟的，拍下来是真的」这种最糟糕的结果不会发生。
 >
 > **为什么不做「每个 App 单独注入 UI」**：那是把相机界面换成自己的界面，
-> 只在特定 App 有效，且一眼就能看出被改过。VCam 在数据层替换，
+> 只在特定 App 有效，且一眼就能看出被改过。本插件在数据层替换，
 > App 自己完全不知道，它拿到的仍是「一个普通的 AVCaptureDevice」。
 
 ### 1.2 数据流（三个虚拟源 → 统一 CVPixelBuffer → 注入）
@@ -192,7 +190,7 @@ SpringBoard（UI）与 mediaserverd（采集）是两个进程，不能共享内
   /var/mobile/Library/VCam/state.plist ─────┘
          │  原子写（.tmp + rename，0644）
          ▼
-  notify_post("com.quite85.vcam/stateChanged")
+  notify_post("com.quite85.virtualcamera/stateChanged")
          │
          ▼  notify_register_dispatch
     各进程 reloadFromState → 重建虚拟源 → 立刻生效（无需杀进程 / respring）
@@ -322,8 +320,8 @@ cd vcam
 # 方式一：一次打出两个包（推荐；会自动切换 control 文件）
 chmod +x scripts/*.sh
 ./scripts/build.sh
-# → packages/com.quite85.vcam_1.0.0_iphoneos-arm64-rootful.deb
-# → packages/com.quite85.vcam_1.0.0_iphoneos-arm64-rootless.deb
+# → packages/com.quite85.virtualcamera_1.0.0_iphoneos-arm64-rootful.deb
+# → packages/com.quite85.virtualcamera_1.0.0_iphoneos-arm64-rootless.deb
 
 # 方式二：单独打一个（注意先切换 control，Theos 只读根目录的 ./control）
 cp control-rootful control && make package FINALPACKAGE=1
@@ -370,7 +368,7 @@ cp control-rootful control && make package DEBUG=1
 ```bash
 # Sileo 里安装（推荐）
 # 或 ad-hoc：
-dpkg -i com.quite85.vcam_1.0.0_iphoneos-arm64-rootless.deb
+dpkg -i com.quite85.virtualcamera_1.0.0_iphoneos-arm64-rootless.deb
 killall -9 SpringBoard    # UI 生效需要重启 SpringBoard
 ```
 
@@ -386,7 +384,7 @@ killall -9 SpringBoard    # UI 生效需要重启 SpringBoard
 ```
 
 ```bash
-dpkg -i com.quite85.vcam_1.0.0_iphoneos-arm64-rootful.deb
+dpkg -i com.quite85.virtualcamera_1.0.0_iphoneos-arm64-rootful.deb
 killall -9 SpringBoard
 ```
 
@@ -403,12 +401,12 @@ killall -9 SpringBoard
 tail -f /var/mobile/Library/VCam/vcam.log
 
 # 期望看到的行：
-#   =========== VCam 加载到 SpringBoard (pid ...) ===========
+#   =========== 虚拟摄像头 加载到 SpringBoard (pid ...) ===========
 #   [vol] 音量键监听已安装
-#   =========== VCam 加载到 mediaserverd (pid ...) ===========
+#   =========== 虚拟摄像头 加载到 mediaserverd (pid ...) ===========
 #   [hook][msd] 已 hook FigImageQueueEnqueue @ 0x...
 #   [mic][msd] 已 hook AudioUnitSetProperty @ 0x...
-#   =========== VCam 加载到 <某个App> (pid ...) ===========
+#   =========== 虚拟摄像头 加载到 <某个App> (pid ...) ===========
 #   [app] 已为 AVCaptureVideoDataOutput 安装虚拟帧代理
 
 # 2) 确认 dylib 与 filter 都在
@@ -491,7 +489,7 @@ include $(THEOS_MAKE_PATH)/tweak.mk
 第一次选择相册资源时会弹权限申请。**必须允许**，因为：
 
 PHPicker 提供的临时授权只对调用进程（SpringBoard）在当前会话内有效，
-而真正读文件的 `mediaserverd` 没有这个授权。所以 VCam 的流程是：
+而真正读文件的 `mediaserverd` 没有这个授权。所以本插件的流程是：
 
 ```
 PHPicker 选择 → SpringBoard 进程内导出到
@@ -596,7 +594,7 @@ aac -b:a 128k -ar 48000 -ac 2
 
 OBS 里必须**同时有音频轨**（桌面音频或麦克风都可以），
 插件的 `AudioConverter` 会解 AAC 并灌进虚拟麦克风。
-如果 OBS 只推视频，VCam 会输出**静音占位**而不是放行真实麦克风
+如果 OBS 只推视频，本插件会输出**静音占位**而不是放行真实麦克风
 （避免「画面是虚拟的、声音是真的」这种穿帮）。
 
 ---
@@ -644,8 +642,8 @@ cd repo && python3 -m http.server 8000
     vcam.png
     vcam_banner.png
   debs/
-    com.quite85.vcam_1.0.0_iphoneos-arm64-rootful.deb
-    com.quite85.vcam_1.0.0_iphoneos-arm64-rootless.deb
+    com.quite85.virtualcamera_1.0.0_iphoneos-arm64-rootful.deb
+    com.quite85.virtualcamera_1.0.0_iphoneos-arm64-rootless.deb
 ```
 
 ### 7.3 Release 内容
@@ -681,7 +679,6 @@ Architecture: iphoneos-arm64
 Description: 系统级虚拟摄像头 + 虚拟麦克风（相册图片 / 相册视频 / OBS MPEG-TS 推流）
 Depends: firmware (>= 15.0), firmware (<< 16.7), mobilesubstrate | ellekit
 Recommends: preferenceloader
-Conflicts: com.notaudren.vcam, com.audren.vcam
 Installed-Size: 512
 Section: Tweaks
 Depiction: https://quite85.github.io/vcam/depiction/vcam.html
@@ -689,7 +686,7 @@ SileoDepiction: https://quite85.github.io/vcam/depiction/vcam.json
 Icon: https://quite85.github.io/vcam/icons/vcam.png
 Author: yourname <you@quite85.github.io>
 Maintainer: yourname <you@quite85.github.io>
-Filename: debs/com.quite85.vcam_1.0.0_iphoneos-arm64-rootful.deb
+Filename: debs/com.quite85.virtualcamera_1.0.0_iphoneos-arm64-rootful.deb
 Size: 184320
 MD5sum: 9c1f...（32 位）
 SHA256: 3f2a...（64 位）
@@ -875,7 +872,7 @@ https://example.com/repo          （放在子目录时）
 
 ### 9.1 可能仍然检测到虚拟相机的 App
 
-VCam 不做对抗检测（这是设计选择，也符合需求里「不做针对特定 App 的
+本插件不做对抗检测（这是设计选择，也符合需求里「不做针对特定 App 的
 恶意检测对抗样本」）。以下情况可能被 App 自己发现：
 
 | 检测手段 | 说明 |
@@ -892,10 +889,10 @@ VCam 不做对抗检测（这是设计选择，也符合需求里「不做针对
 - 微信/QQ 的**视频通话**：它同时用摄像头 + 麦克风 + 自己的编解码，
   部分版本会读取 `AVCaptureDevice` 的 `deviceType` 列表来判断是不是真机摄像头。
 - **FaceTime**：走 `AVConference` 框架，采集由独立 XPC 服务负责。
-  VCam 的 mediaserverd 层 hook 通常能覆盖，但如果 iOS 版本把采集挪到
+  本插件的 mediaserverd 层 hook 通常能覆盖，但如果 iOS 版本把采集挪到
   `AVConference` 自己的进程里，就需要额外注入该进程。
 - **Snapchat / Instagram 的相机**：它们大量使用 `AVCapturePhotoOutput`
-  与自定义 Metal 渲染管线。VCam 的照片替换 + 视频帧替换一般有效，
+  与自定义 Metal 渲染管线。本插件的照片替换 + 视频帧替换一般有效，
   但 Snapchat 的部分滤镜会直接把 `CVPixelBuffer` 送进自家 GPU 管线，
   这时虚拟帧仍是虚拟帧（对我们有利）。
 - **扫码 / 二维码**：会拿到虚拟画面，扫到的是视频里的码，属正常行为。
@@ -918,7 +915,7 @@ VCam 不做对抗检测（这是设计选择，也符合需求里「不做针对
 | 冲突场景 | 现状 |
 | --- | --- |
 | 相机 App 内录像时按音量减 | 会弹窗（设计如此），但不会打断录像 |
-| 系统相机「音量键快门」 | 与 VCam 冲突。开启替换后，按音量减弹 VCam 小窗，不会拍照。可以先禁用替换再拍 |
+| 系统相机「音量键快门」 | 与本插件冲突。开启替换后，按音量减弹插件小窗，不会拍照。可以先禁用替换再拍 |
 | 音乐 / 播客 App | 会被拦截弹出小窗（短按）。长按仍能调音量 |
 | 通话中 | 完全不拦截（检测到 `AVAudioSessionCategoryPlayAndRecord` + 其它音频播放时放行） |
 | 精确的「按下/松开」判定 | 用的是「0.28 秒内音量是否继续下降」启发式判断。极快速连按可能偶尔被判定为长按，或反之 |
@@ -1003,7 +1000,7 @@ otify_register_check 的 out_token 是 int * 不是 uint32_t * |
 
 ## 附录：参考与致谢
 
-- 能力范围参考：[VCam-iOS-16](https://github.com/notaudren/VCam-iOS-16)（未使用其任何代码或二进制）
+- 全部代码为独立实现：未使用任何第三方闭源二进制或反编译产物
 - [Theos](https://theos.dev/) · [Logos](https://theos.dev/docs/logos)
 - [ElleKit](https://github.com/evelyneee/ellekit) · [Dopamine](https://github.com/opa334/Dopamine)
 - [FFmpeg](https://ffmpeg.org/)（仅 mpegts demux 与 h264/aac parser）

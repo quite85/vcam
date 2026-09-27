@@ -70,7 +70,7 @@ static BOOL gPassthrough = NO;
     CVPixelBufferRef pb = [core copyPixelBufferForNow];
     if (!pb) {
         dispatch_async(dispatch_get_main_queue(), ^{
-            self.hint.string = @"VCam：等待信号…";
+            self.hint.string = @"虚拟摄像头：等待信号…";
             self.hint.hidden = NO;
         });
         return;
@@ -117,7 +117,7 @@ static BOOL gPassthrough = NO;
     overlay.allowsEdgeAntialiasing = YES;
 
     CATextLayer *hint = [CATextLayer layer];
-    hint.string = @"VCam：等待信号…";
+    hint.string = @"虚拟摄像头：等待信号…";
     hint.fontSize = 15;
     hint.alignmentMode = kCAAlignmentCenter;
     hint.foregroundColor = UIColor.whiteColor.CGColor;

@@ -1,11 +1,10 @@
-Package: com.quite85.vcam
-Name: VCam
+Package: com.quite85.virtualcamera
+Name: 虚拟摄像头
 Version: 1.0.0
 Architecture: iphoneos-arm64
 Description: 系统级虚拟摄像头 + 虚拟麦克风（相册图片 / 相册视频 / OBS MPEG-TS 推流）
 Depends: firmware (>= 15.0), firmware (<< 16.7), mobilesubstrate | ellekit
 Recommends: preferenceloader
-Conflicts: com.notaudren.vcam, com.audren.vcam
 Installed-Size: 512
 Section: Tweaks
 Homepage: https://quite85.github.io
@@ -15,7 +14,7 @@ Icon: https://quite85.github.io/vcam/icons/vcam.png
 Author: yourname <you@quite85.github.io>
 Maintainer: yourname <you@quite85.github.io>
 Tag: purpose::extension, role::hacker
-Filename: debs/com.quite85.vcam_1.0.0_iphoneos-arm64-rootful.deb
+Filename: debs/com.quite85.virtualcamera_1.0.0_iphoneos-arm64-rootful.deb
 Size: 0
 MD5sum: 00000000000000000000000000000000
 SHA256: 0000000000000000000000000000000000000000000000000000000000000000
@@ -24,14 +23,13 @@ SHA256: 0000000000000000000000000000000000000000000000000000000000000000
  scripts/make-repo.sh 用实际的 .deb 自动计算后写入，否则 Sileo 会报
  哈希校验失败。请不要手工把这一条发包。
 
-Package: com.quite85.vcam
-Name: VCam (rootless)
+Package: com.quite85.virtualcamera
+Name: 虚拟摄像头 (rootless)
 Version: 1.0.0
 Architecture: iphoneos-arm64
 Description: 系统级虚拟摄像头 + 虚拟麦克风 —— rootless 版（安装到 /var/jb）
 Depends: firmware (>= 15.0), firmware (<< 16.7), mobilesubstrate | ellekit
 Recommends: preferenceloader
-Conflicts: com.notaudren.vcam, com.audren.vcam
 Installed-Size: 512
 Section: Tweaks
 Homepage: https://quite85.github.io
@@ -41,7 +39,7 @@ Icon: https://quite85.github.io/vcam/icons/vcam.png
 Author: yourname <you@quite85.github.io>
 Maintainer: yourname <you@quite85.github.io>
 Tag: purpose::extension, role::hacker
-Filename: debs/com.quite85.vcam_1.0.0_iphoneos-arm64-rootless.deb
+Filename: debs/com.quite85.virtualcamera_1.0.0_iphoneos-arm64-rootless.deb
 Size: 0
 MD5sum: 00000000000000000000000000000000
 SHA256: 0000000000000000000000000000000000000000000000000000000000000000

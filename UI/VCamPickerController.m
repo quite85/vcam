@@ -44,10 +44,10 @@
         // 先确保相册权限（导出到本地文件需要）
         [self _ensurePhotoPermission:^(BOOL granted) {
             if (!granted) {
-                NSError *e = [NSError errorWithDomain:@"com.quite85.vcam"
+                NSError *e = [NSError errorWithDomain:@"com.quite85.virtualcamera"
                                                  code:1
                                              userInfo:@{NSLocalizedDescriptionKey:
-                                                @"没有相册权限。请到 设置 → 隐私 → 照片 里允许 VCam 访问。"}];
+                                                @"没有相册权限。请到 设置 → 隐私 → 照片 里允许本插件访问。"}];
                 [self _finishWithPath:nil isVideo:NO error:e];
                 return;
             }
@@ -302,7 +302,7 @@
 }
 
 - (NSError *)_err:(NSString *)msg {
-    return [NSError errorWithDomain:@"com.quite85.vcam" code:-1
+    return [NSError errorWithDomain:@"com.quite85.virtualcamera" code:-1
                            userInfo:@{NSLocalizedDescriptionKey: msg}];
 }
 

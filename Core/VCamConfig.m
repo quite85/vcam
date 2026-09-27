@@ -33,9 +33,9 @@ NSString *const kVCamStateKeySessionActive = @"sessionActive";
 NSString *const kVCamStateKeyLastError     = @"lastError";
 NSString *const kVCamStateKeyVersion       = @"schemaVersion";
 
-NSString *const kVCamNotificationStateChanged   = @"com.quite85.vcam/stateChanged";
-NSString *const kVCamNotificationUIrefresh      = @"com.quite85.vcam/uirefresh";
-NSString *const kVCamNotificationMSDUnavailable = @"com.quite85.vcam/msdUnavailable";
+NSString *const kVCamNotificationStateChanged   = @"com.quite85.virtualcamera/stateChanged";
+NSString *const kVCamNotificationUIrefresh      = @"com.quite85.virtualcamera/uirefresh";
+NSString *const kVCamNotificationMSDUnavailable = @"com.quite85.virtualcamera/msdUnavailable";
 
 #pragma mark - 路径
 
@@ -43,11 +43,11 @@ NSString *VCamStateDirectory(void) {
     static NSString *dir = nil;
     static dispatch_once_t once;
     dispatch_once(&once, ^{
-        dir = @"/var/mobile/Library/VCam";
+        dir = @"/var/mobile/Library/VirtualCamera";
         // 若 /var/mobile 不可写（极少见，例如某些 roothide 变体），退回 /tmp
         NSFileManager *fm = NSFileManager.defaultManager;
         if (![fm fileExistsAtPath:@"/var/mobile/Library"]) {
-            dir = @"/tmp/VCam";
+            dir = @"/tmp/VirtualCamera";
         }
         if (![fm fileExistsAtPath:dir]) {
             [fm createDirectoryAtPath:dir
@@ -64,7 +64,7 @@ NSString *VCamStateFilePath(void) {
 }
 
 NSString *VCamLogFilePath(void) {
-    return [VCamStateDirectory() stringByAppendingPathComponent:@"vcam.log"];
+    return [VCamStateDirectory() stringByAppendingPathComponent:@"virtualcamera.log"];
 }
 
 NSString *VCamMSDCrashFlagPath(void) {

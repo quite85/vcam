@@ -5,8 +5,8 @@
     "banners": [
         {
             "url": "https://quite85.github.io/vcam/icons/vcam_banner.png",
-            "title": "VCam",
-            "package": "com.quite85.vcam",
+            "title": "虚拟摄像头",
+            "package": "com.quite85.virtualcamera",
             "hideShadow": false
         }
     ]

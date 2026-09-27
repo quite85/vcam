@@ -11,8 +11,8 @@
 #import <UIKit/UIKit.h>
 #import <notify.h>
 
-#define VCAM_STATE_PATH @"/var/mobile/Library/VCam/state.plist"
-#define VCAM_NOTIFY "com.quite85.vcam/stateChanged"
+#define VCAM_STATE_PATH @"/var/mobile/Library/VirtualCamera/state.plist"
+#define VCAM_NOTIFY "com.quite85.virtualcamera/stateChanged"
 
 @interface VCamPrefsRootListController : PSListController
 @end
@@ -28,7 +28,7 @@
 
 - (void)viewDidLoad {
     [super viewDidLoad];
-    self.title = @"VCam 虚拟相机";
+    self.title = @"虚拟摄像头";
     self.navigationItem.rightBarButtonItem =
         [[UIBarButtonItem alloc] initWithTitle:@"重载" style:UIBarButtonItemStylePlain
                                         target:self action:@selector(reloadState)];
@@ -64,18 +64,18 @@
 - (void)reloadState {
     notify_post(VCAM_NOTIFY);
     UIAlertController *a = [UIAlertController alertControllerWithTitle:@"已重载"
-        message:@"所有进程已重新读取 VCam 配置。" preferredStyle:UIAlertControllerStyleAlert];
+        message:@"所有进程已重新读取配置。" preferredStyle:UIAlertControllerStyleAlert];
     [a addAction:[UIAlertAction actionWithTitle:@"好" style:UIAlertActionStyleDefault]];
     [self presentViewController:a animated:YES completion:nil];
 }
 
 - (void)openLog {
-    NSString *log = @"/var/mobile/Library/VCam/vcam.log";
+    NSString *log = @"/var/mobile/Library/VirtualCamera/virtualcamera.log";
     NSString *text = [NSString stringWithContentsOfFile:log encoding:NSUTF8StringEncoding error:NULL];
     if (!text.length) text = @"（日志为空）";
     // 只显示最后 8000 字符，避免超大日志卡住 UI
     if (text.length > 8000) text = [text substringFromIndex:text.length - 8000];
-    UIAlertController *a = [UIAlertController alertControllerWithTitle:@"VCam 日志（末尾 8000 字）"
+    UIAlertController *a = [UIAlertController alertControllerWithTitle:@"虚拟摄像头 日志（末尾 8000 字）"
         message:text preferredStyle:UIAlertControllerStyleAlert];
     [a addAction:[UIAlertAction actionWithTitle:@"复制" style:UIAlertActionStyleDefault
                                       handler:^(UIAlertAction *x) {
@@ -86,7 +86,7 @@
 }
 
 - (void)clearLog {
-    [@"" writeToFile:@"/var/mobile/Library/VCam/vcam.log" atomically:YES
+    [@"" writeToFile:@"/var/mobile/Library/VirtualCamera/virtualcamera.log" atomically:YES
             encoding:NSUTF8StringEncoding error:NULL];
     [self reloadState];
 }
@@ -99,7 +99,7 @@
 
 - (void)showDisclaimer {
     UIAlertController *a = [UIAlertController alertControllerWithTitle:@"使用须知"
-        message:@"VCam 用于个人内容创作、直播画面替代、或物理摄像头/麦克风损坏时的应急方案。\n\n"
+        message:@"本插件用于个人内容创作、直播画面替代、或物理摄像头/麦克风损坏时的应急方案。\n\n"
                 @"请自行遵守所使用 App 的服务条款与当地法律法规。本插件不含卡密、不联网授权、不上传任何信息。"
         preferredStyle:UIAlertControllerStyleAlert];
     [a addAction:[UIAlertAction actionWithTitle:@"我知道了" style:UIAlertActionStyleDefault]];

@@ -20,7 +20,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
-PKG_ID="${VCAM_PKG_ID:-com.quite85.vcam}"
+PKG_ID="${VCAM_PKG_ID:-com.quite85.virtualcamera}"
 ENABLE_OBS="${VCAM_ENABLE_OBS:-1}"
 ONLY="${ONLY:-all}"
 # 编译用 SDK 版本。留空 = 让 Theos 用 Xcode 自带的 SDK（macOS 本机开发）。

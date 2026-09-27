@@ -341,7 +341,7 @@ static os_unfair_lock gPoolLock = OS_UNFAIR_LOCK_INIT;
         }
         CGContextStrokePath(c);
 
-        NSString *t = text.length ? text : @"VCam · 等待信号";
+        NSString *t = text.length ? text : @"虚拟摄像头 · 等待信号";
         NSDictionary *attrs = @{
             NSFontAttributeName: [UIFont boldSystemFontOfSize:MAX(18, height / 24.0)],
             NSForegroundColorAttributeName: UIColor.whiteColor,

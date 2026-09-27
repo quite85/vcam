@@ -43,7 +43,7 @@ endif
 # 用户可改的变量
 # ---------------------------------------------------------------------------
 # 反转域名。改这里的同时也要改 control / control-rootless 的 Package 行
-export VCAM_PKG_ID     ?= com.quite85.vcam
+export VCAM_PKG_ID     ?= com.quite85.virtualcamera
 # 是否编译 OBS(FFmpeg) 支持。0 时 OBS 菜单项会提示"本包未编译 OBS 支持"
 export VCAM_ENABLE_OBS ?= 1
 # 是否附带 PreferenceLoader 设置面板（默认关，主交互走音量键悬浮窗）

@@ -171,7 +171,7 @@ typedef NS_ENUM(NSInteger, VCamButtonStyle) {
     UIView *content = panel.contentView;
 
     UILabel *title = [[UILabel alloc] init];
-    title.text = @"VCam 虚拟相机";
+    title.text = @"虚拟摄像头";
     title.font = [UIFont systemFontOfSize:14 weight:UIFontWeightSemibold];
     title.textColor = UIColor.whiteColor;
     title.translatesAutoresizingMaskIntoConstraints = NO;

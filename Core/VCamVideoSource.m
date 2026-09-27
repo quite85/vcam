@@ -149,7 +149,7 @@ static const UInt32  kVCamPCMOutChannels   = 2;
 
     // ---- 音频管线 ----
     if (_hasAudio && self.audioHandler) {
-        _audioQueue = dispatch_queue_create("com.quite85.vcam.video.audio", DISPATCH_QUEUE_SERIAL);
+        _audioQueue = dispatch_queue_create("com.quite85.virtualcamera.video.audio", DISPATCH_QUEUE_SERIAL);
         [self _startAudioPipeline];
     }
 

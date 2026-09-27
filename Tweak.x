@@ -413,7 +413,7 @@ static const void *kVCamSwizzledKey = &kVCamSwizzledKey;
 %ctor {
     @autoreleasepool {
         NSString *proc = VCamCurrentProcessName();
-        VCamLog(@"=========== VCam 加载到 %@ (pid %d) ===========", proc, getpid());
+        VCamLog(@"=========== 虚拟摄像头 加载到 %@ (pid %d) ===========", proc, getpid());
 
         // 1) 所有进程都需要状态监听
         [[VCamCore shared] observeStateIfNeeded];

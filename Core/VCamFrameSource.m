@@ -22,7 +22,7 @@
         _lipSyncOffsetMs = 0;
         _lastEmitHostTime = 0;
         _lock = OS_UNFAIR_LOCK_INIT;
-        _queue = dispatch_queue_create("com.quite85.vcam.framesource", DISPATCH_QUEUE_SERIAL);
+        _queue = dispatch_queue_create("com.quite85.virtualcamera.framesource", DISPATCH_QUEUE_SERIAL);
         dispatch_set_target_queue(_queue,
             dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0));
     }
