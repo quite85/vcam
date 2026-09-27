@@ -2,91 +2,45 @@ TARGET = iphone:clang:latest:15.0
 ARCHS = arm64 arm64e
 
 # ---------------------------------------------------------------------------
-# 诊断构建 Stage 1
+# Stage1 诊断包 —— **零 hook** 最小验证
 # ---------------------------------------------------------------------------
-# 与主工程的三处关键差别：
+# 目的：用一个"什么都不做"的 dylib，回答一个唯一的问题 ——
 #
-# 1) **tweak 改名**：VCam → VirtualCamera
-#    原因：用户手机上曾装过第三方闭源插件 com.vcam，它装的文件是
-#        VCam.dylib / VCam.plist / VCamSB.dylib / VCamSB.plist
-#    与本工程**完全同名**。即使卸载了，同名文件也可能残留并互相覆盖，
-#    导致排查结果完全不可信（跑的可能一直是残留的旧插件）。
-#    改成一个完全不同的名字，彻底消除这个变量。
+#     "把我们的 dylib 注入到一个普通 App 里，会不会出事？"
 #
-# 2) **注入面缩到最小**：filter 只列 com.apple.Preferences（设置 App）
-#    主工程的 VCam.plist 列了 111 个条目，另有 VCam-mediaserverd.plist
-#    声明注入 mediaserverd / camerad / audioaccessoryd 等 7 个系统守护进程。
-#    参考开源项目 lxxsoufahk/VCam，它的 filter 只有：
-#        Bundles: com.apple.UIKit
-#        Executables: SpringBoard
-#    即"注入面尽量小"。注入面越大，崩溃面越大。
-#    本阶段只注入设置 App —— 即使插件有严重问题，
-#    最坏结果只是设置 App 打不开，**不会黑屏**（完全不碰 SpringBoard）。
+# 它做什么：
+#   · filter 只列 com.apple.Preferences（设置 App）
+#   · Tweak 里只有一个 %ctor，往 /var/mobile/Library/VirtualCamera/stage1.log
+#     追加一行时间戳
+#   · @try/@catch 包住全部逻辑
 #
-# 3) **不打 mediaserverd filter**：layout 里什么都不放
+# 它**不做**什么（这是重点）：
+#   · 不含任何 %hook —— 一行 hook 都没有
+#   · 不 import AVFoundation / 不碰相机 / 不碰音频
+#   · 不注入 SpringBoard、不注入 mediaserverd 等系统守护进程
+#   · 不加载工程里的 Core/UI/Media/Mic 任何代码
 #
-# Linux 本地交叉编译修正（详见 Docs/LOCAL_BUILD.md）：
-#   clang 在 Apple 目标下默认 -fuse-ld=llvm，Linux 上找不到就回退 GNU ld
-#   并报 "unrecognised emulation mode: llvm"。用包装脚本作 TARGET_LD 解决。
+# 为什么要先做这个：
+#   此前四次黑屏，主工程带了大量 hook 与 111 项 filter，
+#   无法区分"注入机制本身有问题"还是"某个 hook 有问题"。
+#   这个包把变量降到只剩"注入机制"。
 #
-# ⚠️ 必须**只在包装脚本存在时**才覆盖 TARGET_LD。
-#    之前是硬编码 TARGET_LD = /usr/local/bin/vcam-link，
-#    结果在 macOS CI 上链接时直接报：
-#        bash: /usr/local/bin/vcam-link: No such file or directory
-#        make[3]: *** [.../VirtualCamera.dylib] Error 127
-#    因为那个路径只存在于我的 WSL 环境。
-#    Apple 工具链本来就能正确链接，不需要任何覆盖。
+# 风险：filter 只列设置 App，且零 hook。
+#       即使 dylib 加载有问题，最坏也只是设置 App 打不开，不会黑屏。
+
+# Linux 本地交叉编译修正（仅在包装脚本存在时生效，macOS CI 不受影响）。
+# 详见 Docs/LOCAL_BUILD.md。
 ifneq ($(wildcard /usr/local/bin/vcam-link),)
   TARGET_LD = /usr/local/bin/vcam-link
-  # Theos 的 toolchain 前缀会拼出 -fuse-ld=<bin>/arm64-apple-darwin14-ld，
-  # 而 clang 只取最后一段当链接器名（得到 "ld"）→ 又调回 GNU ld。置空规避。
   _THEOS_TARGET_SDK_BIN_PREFIX :=
 endif
 
 include $(THEOS)/makefiles/common.mk
 
 TWEAK_NAME = VirtualCamera
-VirtualCamera_FILES = Tweak.x
+VirtualCamera_FILES = Stage1.x
 
-# 显式列出源文件，**不用 wildcard**。
-# 原因：wildcard 会把 OBS 相关文件也编进来，而那些文件在
-# VCAM_ENABLE_OBS=0 时不该参与编译：
-#   · VCamTSDemuxer.m / VCamOBSAudioDecoder.m / VCamVideoToolboxDecoder.m
-#     用到 libavformat、kVTVideoDecoderSpecification_RequireHardwareAcceleratedVideoDecoder
-#     kAudioConverterErr_NoMoreData 等只有完整 iOS SDK + FFmpeg 才有的符号
-#   · VCAM_ENABLE_OBS=0 时应改用 VCamOBSSource_stub.m
-# 主工程的 Makefile 就是这么做的（显式列举 + 按开关切换 stub），
-# 这里对齐主工程，避免本地构建再踩同一个坑。
-VirtualCamera_FILES += \
-    Core/VCamConfig.m \
-    Core/VCamStateStore.m \
-    Core/VCamPixelBufferUtils.m \
-    Core/VCamFrameSource.m \
-    Core/VCamImageSource.m \
-    Core/VCamVideoSource.m \
-    Core/VCamConcurrentQueue.m \
-    Core/VCamOBSAddress.m \
-    Core/VCamCore.m \
-    Core/VCamOBSSource_stub.m \
-    UI/VCamPanel.m \
-    UI/VCamPickerController.m \
-    UI/VCamHUD.m \
-    UI/VCamVolumeHook.m \
-    UI/VCamVideoDataOutputProxy.m \
-    UI/VCamPreviewOverlay.m \
-    Media/VCamPhotoOutputInjector.m \
-    Media/VCamMovieFileInjector.m \
-    Mic/VCamMicInjector.m
-
-VirtualCamera_CFLAGS = -fobjc-arc \
-    -Wno-deprecated-declarations -Wno-unused-variable -Wno-unused-function \
-    -Wno-nullability-completeness -Wno-objc-method-access -Wno-shadow \
-    -Wno-unused-parameter -Wno-unguarded-availability-new \
-    -I$(THEOS_PROJECT_DIR) -ICore -IUI -IMedia -IMic \
-    -DVCAM_ENABLE_OBS=0 \
-    -DVCAM_PKG_ID=\"com.quite85.vcamstage1\"
-
-VirtualCamera_FRAMEWORKS = Foundation UIKit AVFoundation CoreMedia CoreVideo \
-    AudioToolbox Accelerate QuartzCore MediaPlayer PhotosUI Photos ImageIO
+VirtualCamera_CFLAGS = -fobjc-arc -Wno-everything
+VirtualCamera_FRAMEWORKS = Foundation
 
 include $(THEOS_MAKE_PATH)/tweak.mk

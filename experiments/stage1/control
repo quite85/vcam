@@ -1,16 +1,23 @@
 Package: com.quite85.vcamstage1
-Name: VirtualCamera 测试 Stage1 (只注入设置)
-Version: 1.0.0
+Name: VirtualCamera 测试 Stage1 (零 hook)
+Version: 1.0.1
 Architecture: iphoneos-arm64
-Description: VCam 诊断构建 Stage 1 —— 逐步定位黑屏原因。
- 本阶段特征：
- · tweak 名改为 VirtualCamera（避免与旧插件 VCam.dylib/VCam.plist 同名冲突）
+Description: VCam 诊断构建 Stage1 —— 零 hook 最小注入验证。
+ 本包**不含任何 %hook**，只做一件事：被注入时写一行日志。
+ 用途：回答唯一一个问题 —— "把我们的 dylib 注入普通 App 会不会出事？"
+ .
+ 特征：
+ · tweak 名 VirtualCamera（避开旧插件的 VCam.dylib/VCam.plist 同名冲突）
  · filter 只列 com.apple.Preferences（设置 App）
  · 不注入 SpringBoard、不注入 mediaserverd 等系统守护进程
- 用途：验证"我们的 dylib 与 App 层 hook 本身是否安全"。
- 风险极小：即使有问题也只是设置 App 打不开，不会黑屏。
+ · 不 import AVFoundation、不碰相机与音频
+ · 不加载工程里的 Core/UI/Media/Mic 任何代码
  .
- 日志：/var/mobile/Library/VirtualCamera/virtualcamera.log
+ 风险极小：即使 dylib 加载有问题，最坏也只是设置 App 打不开。
+ .
+ 验证：打开「设置」App，然后看
+ /var/mobile/Library/VirtualCamera/stage1.log
+ 应出现 "injected com.apple.Preferences pid=..."
 Homepage: https://github.com/quite85/vcam
 Maintainer: quite85 <quite85@users.noreply.github.com>
 Author: quite85 <quite85@users.noreply.github.com>
