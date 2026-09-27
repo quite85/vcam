@@ -28,10 +28,20 @@ ARCHS = arm64 arm64e
 # Linux 本地交叉编译修正（详见 Docs/LOCAL_BUILD.md）：
 #   clang 在 Apple 目标下默认 -fuse-ld=llvm，Linux 上找不到就回退 GNU ld
 #   并报 "unrecognised emulation mode: llvm"。用包装脚本作 TARGET_LD 解决。
-TARGET_LD = /usr/local/bin/vcam-link
-# Theos 的 toolchain 前缀会拼出 -fuse-ld=<bin>/arm64-apple-darwin14-ld，
-# 而 clang 只取最后一段当链接器名（得到 "ld"）→ 又调回 GNU ld。置空规避。
-_THEOS_TARGET_SDK_BIN_PREFIX :=
+#
+# ⚠️ 必须**只在包装脚本存在时**才覆盖 TARGET_LD。
+#    之前是硬编码 TARGET_LD = /usr/local/bin/vcam-link，
+#    结果在 macOS CI 上链接时直接报：
+#        bash: /usr/local/bin/vcam-link: No such file or directory
+#        make[3]: *** [.../VirtualCamera.dylib] Error 127
+#    因为那个路径只存在于我的 WSL 环境。
+#    Apple 工具链本来就能正确链接，不需要任何覆盖。
+ifneq ($(wildcard /usr/local/bin/vcam-link),)
+  TARGET_LD = /usr/local/bin/vcam-link
+  # Theos 的 toolchain 前缀会拼出 -fuse-ld=<bin>/arm64-apple-darwin14-ld，
+  # 而 clang 只取最后一段当链接器名（得到 "ld"）→ 又调回 GNU ld。置空规避。
+  _THEOS_TARGET_SDK_BIN_PREFIX :=
+endif
 
 include $(THEOS)/makefiles/common.mk
 
