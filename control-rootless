@@ -1,0 +1,20 @@
+Package: com.quite85.vcam
+Name: VCam (rootless)
+Version: 1.0.0
+Architecture: iphoneos-arm64
+Description: 系统级虚拟摄像头 + 虚拟麦克风（相册图片 / 相册视频 / OBS 推流）—— rootless 版本，适用于 Dopamine / palera1n rootless / XinaA15 等无根越狱（安装到 /var/jb）
+ 功能与 rootful 版完全一致。安装路径 /var/jb/Library/MobileSubstrate/DynamicLibraries 与
+ /var/jb/Library/PreferenceBundles。请勿与 rootful 版同时安装。
+ .
+ 仅用于个人内容创作、直播替代画面、或物理摄像头损坏时的应急替代方案。
+Homepage: https://quite85.github.io/vcam/depiction/vcam.html
+Depiction: https://quite85.github.io/vcam/depiction/vcam.html
+SileoDepiction: https://quite85.github.io/vcam/depiction/vcam.json
+Icon: https://quite85.github.io/vcam/icons/vcam.png
+Maintainer: yourname <you@quite85.github.io>
+Author: yourname <you@quite85.github.io>
+Section: Tweaks
+Depends: firmware (>= 15.0), firmware (<< 16.7), mobilesubstrate | ellekit
+Recommends: preferenceloader
+Conflicts: com.notaudren.vcam, com.audren.vcam
+Tag: purpose::extension, role::hacker

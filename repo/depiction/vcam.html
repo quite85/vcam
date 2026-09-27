@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>VCam —— 系统级虚拟相机 + 虚拟麦克风</title>
+<style>
+  :root{
+    --bg:#0b0e13; --card:#151a22; --card2:#1c232d; --fg:#e9eef6;
+    --dim:#96a3b5; --tint:#4da3ff; --line:rgba(255,255,255,.08);
+  }
+  @media (prefers-color-scheme: light){
+    :root{ --bg:#f4f6fa; --card:#fff; --card2:#f0f3f8; --fg:#131820;
+           --dim:#5a6675; --line:rgba(0,0,0,.08); }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);
+       font:16px/1.65 -apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC",
+            "Helvetica Neue",Arial,sans-serif;
+       -webkit-text-size-adjust:100%}
+  .hero{padding:34px 20px 22px;text-align:center;
+        background:linear-gradient(160deg,#12325c 0%,#0b0e13 70%)}
+  @media (prefers-color-scheme: light){
+    .hero{background:linear-gradient(160deg,#d8e8ff 0%,#f4f6fa 70%)}
+  }
+  .hero img{width:96px;height:96px;border-radius:22px;
+            box-shadow:0 10px 30px rgba(0,0,0,.45)}
+  .hero h1{margin:14px 0 4px;font-size:26px;letter-spacing:.2px}
+  .hero p{margin:0;color:var(--dim);font-size:14px}
+  .wrap{max-width:760px;margin:0 auto;padding:0 16px 60px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:16px;
+        padding:18px;margin:16px 0}
+  .card h2{margin:0 0 10px;font-size:18px}
+  .card h3{margin:18px 0 8px;font-size:15px;color:var(--tint)}
+  .card p,.card li{font-size:15px}
+  ul{padding-left:20px}
+  code,kbd{background:var(--card2);border:1px solid var(--line);border-radius:6px;
+           padding:1px 6px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+           font-size:13px}
+  pre{background:var(--card2);border:1px solid var(--line);border-radius:12px;
+      padding:12px;overflow-x:auto;font-size:13px;
+      font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+  pre code{background:none;border:none;padding:0}
+  table{width:100%;border-collapse:collapse;font-size:14px;margin:8px 0}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line)}
+  th{color:var(--dim);font-weight:600}
+  .pill{display:inline-block;background:var(--card2);border:1px solid var(--line);
+        border-radius:999px;padding:3px 10px;font-size:12px;color:var(--dim);margin:2px 4px 2px 0}
+  .note{border-left:3px solid var(--tint);padding:8px 12px;background:var(--card2);
+        border-radius:0 10px 10px 0;font-size:14px;color:var(--dim)}
+  .warn{border-left-color:#e5a33a}
+  footer{color:var(--dim);font-size:12.5px;text-align:center;padding:24px 16px 40px}
+  a{color:var(--tint)}
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <img src="../icons/vcam.png" alt="VCam">
+  <h1>VCam</h1>
+  <p>系统级虚拟相机 + 虚拟麦克风 · iOS 15.0 – 16.6.1</p>
+  <div style="margin-top:12px">
+    <span class="pill">arm64 / arm64e</span>
+    <span class="pill">rootful / rootless</span>
+    <span class="pill">ElleKit</span>
+    <span class="pill">无卡密 · 无联网授权</span>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <div class="card">
+    <h2>这是什么</h2>
+    <p>VCam 把整机的摄像头画面和麦克风音频替换成虚拟源。任意调用<b>系统相机管线</b>的
+       App —— 系统相机、FaceTime、微信、QQ、Zoom、Snapchat、Instagram、TikTok ——
+       看到的都是虚拟内容，而不是物理传感器。</p>
+    <p>插件在 <code>mediaserverd</code>（相机与音频的真正采集进程）和 App 的
+       <code>AVFoundation</code> 两层同时注入，所以预览、拍照结果、录像文件
+       全部都是虚拟画面，音视频唇形同步。</p>
+    <ul>
+      <li><b>视频</b>：相册视频循环播放；有音轨则同步替换麦克风</li>
+      <li><b>图片</b>：相册图片作为静止画面，按约 30fps 重复送帧</li>
+      <li><b>OBS / 电脑推流</b>：MPEG-TS(H.264+AAC) over UDP/TCP，手机端硬解注入</li>
+      <li><b>禁用替换</b>：立刻完整回到硬件相机与硬件麦克风，无残帧残音</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h2>怎么用（一分钟）</h2>
+    <ol>
+      <li>安装本包，无需 respring。</li>
+      <li>打开任意相机 App，<b>按一次「音量减」</b>。</li>
+      <li>在弹出的悬浮小窗里选择：选择视频 / 选择图片 / 电脑推流 / 禁用替换。</li>
+      <li>小窗可以拖动、会自动贴边，不阻断当前 App。再按一次音量减可收起。</li>
+    </ol>
+    <div class="note">
+      音量键策略：<b>短按弹窗</b>（并把音量还原，不误调音量）、<b>长按才真正调音量</b>。
+      系统通话中不拦截音量键。
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>兼容性</h2>
+    <table>
+      <tr><th>项目</th><th>支持情况</th></tr>
+      <tr><td>iOS 版本</td><td>15.0 – 16.6.1（同一套源码，弱符号 + 版本分支）</td></tr>
+      <tr><td>越狱</td><td>Dopamine（rootless / roothide）、palera1n、unc0ver、checkra1n</td></tr>
+      <tr><td>架构</td><td>arm64e（A9 及以上）、arm64（旧 rootful 设备）</td></tr>
+      <tr><td>依赖</td><td>ElleKit 或 Cydia Substrate / Substitute</td></tr>
+      <tr><td>可选</td><td>PreferenceLoader（设置面板）</td></tr>
+    </table>
+    <div class="note warn">
+      rootless 版本安装到 <code>/var/jb/...</code>，请勿与 rootful 版本同时安装。
+      源里两个架构各有一条 Packages 记录，Sileo 会自动选对的那一个。
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>OBS / 电脑推流 逐步设置</h2>
+    <h3>1. 手机端</h3>
+    <p>小窗里点「电脑推流 / OBS」。插件会开始监听并在界面上显示一个完整地址，
+       例如 <code>udp://192.168.1.20:5600</code>，并且已经帮您复制到剪贴板。</p>
+
+    <h3>2. 电脑端 OBS</h3>
+    <p>OBS → 设置 → 输出 → 把「输出模式」改成 <b>高级</b> → 切到 <b>流</b> 标签：</p>
+    <pre><code>编码器       : FFmpeg 自定义输出  (Custom Output (FFmpeg))
+FFmpeg 输出类型 : 输出到 URL
+容器格式      : mpegts
+视频编码器    : libx264
+音频编码器    : aac
+输出目标      : udp://192.168.1.20:5600   ← 填手机显示的地址</code></pre>
+    <p>然后点「开始推流」。</p>
+
+    <h3>3. 推荐编码参数</h3>
+    <table>
+      <tr><th>参数</th><th>建议值</th></tr>
+      <tr><td>分辨率</td><td>1080x1920（竖屏）/ 1920x1080（横屏）/ 1280x720（省流量）</td></tr>
+      <tr><td>帧率</td><td>30 fps（60fps 会明显增加手机解码压力）</td></tr>
+      <tr><td>编码预设</td><td>veryfast 或 faster</td></tr>
+      <tr><td>Profile</td><td>baseline 或 main（不要 high 10-bit）</td></tr>
+      <tr><td>x264 调优</td><td><code>tune=zerolatency</code></td></tr>
+      <tr><td>关键帧间隔</td><td>1 秒（<code>keyint=30</code>），越小越容易从丢包恢复</td></tr>
+      <tr><td>码率</td><td>Wi-Fi 4–8 Mbps；USB 网络共享 10–15 Mbps</td></tr>
+      <tr><td>B 帧</td><td>0（<code>bframes=0</code>），降低延迟</td></tr>
+    </table>
+
+    <h3>4. 更稳的连接方式（推荐）</h3>
+    <p>用数据线开启 <b>USB 网络共享</b>（iPhone 个人热点用线连接电脑），
+       手机上网卡会变成 <code>172.20.10.x</code>，用这个地址推流比 Wi-Fi
+       延迟低得多，也不容易丢包。小窗会把这类地址排在前面。</p>
+  </div>
+
+  <div class="card">
+    <h2>常见问题</h2>
+    <h3>按音量减没反应</h3>
+    <p>通话中按设计不拦截；另外确认不是长按（长按会调音量）。到
+       「设置 → VCam → 查看日志」可确认注入状态。</p>
+
+    <h3>预览是虚拟的，但拍下来是真的</h3>
+    <p>说明 mediaserverd 层的出帧符号在你这版 iOS 上没被 hook 到
+       （iOS 15 与 16.4+ 的私有符号有变化），并且 App 层的拍照 hook 也被绕过了。
+       请把日志发出来，并临时到「设置 → VCam」打开「仅 App 层注入」试试。</p>
+
+    <h3>装了之后相机黑屏 / 相机 App 打不开</h3>
+    <p>到「设置 → VCam」打开「仅 App 层注入」，然后执行
+       <code>killall mediaserverd</code> 或重启一次。VCam 自带降级保护：
+       如果 mediaserverd 在注入后异常退出，下次启动会自动切换到 App 层模式。</p>
+
+    <h3>手机显示「等待 OBS」</h3>
+    <p>地址必须用手机显示的 IP（不能写 <code>127.0.0.1</code>）；端口要和手机一致；
+       确认电脑与手机在同一网段；UDP 被防火墙拦的话改成 <code>tcp://</code> 试试。</p>
+
+    <h3>声音还是真的麦克风</h3>
+    <p>请选择带音轨的视频，或使用 OBS 模式（OBS 里必须同时有音频轨）。
+       如果只有画面没有音频，VCam 会输出静音占位而不是放行真实麦克风。</p>
+  </div>
+
+  <div class="card">
+    <h2>更新日志</h2>
+    <h3>1.0.0</h3>
+    <ul>
+      <li>首个版本</li>
+      <li>mediaserverd + AVFoundation 双层注入，系统级替换相机与麦克风</li>
+      <li>相册视频（循环 + 自带音轨）/ 相册图片（30fps 重复帧）</li>
+      <li>OBS MPEG-TS 接收，VideoToolbox 硬解 + AudioConverter 解码</li>
+      <li>音量减悬浮小窗（短按弹窗、长按调音量、通话中不拦截）</li>
+      <li>前后摄镜像、旋转、唇形同步微调；禁用后完整恢复硬件</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h2>免责声明</h2>
+    <p>本插件用于个人内容创作、直播画面替代，或物理摄像头 / 麦克风损坏时的应急方案。
+       使用者需自行遵守所使用 App 的服务条款与当地法律法规。
+       作者不对因使用本插件导致的账号处罚、内容纠纷或数据损失承担责任。</p>
+  </div>
+
+</div>
+
+<footer>
+  VCam · 由社区源码构建 · 不含卡密、不联网授权、不上传任何信息
+</footer>
+
+</body>
+</html>

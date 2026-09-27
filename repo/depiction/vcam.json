@@ -1,0 +1,76 @@
+{
+    "class": "DepictionTabView",
+    "minVersion": "0.1",
+    "tintColor": "#4da3ff",
+    "headerImage": "https://quite85.github.io/vcam/icons/vcam_banner.png",
+    "tabs": [
+        {
+            "class": "DepictionStackView",
+            "tabname": "详情",
+            "views": [
+                {
+                    "class": "DepictionMarkdownView",
+                    "markdown": "## VCam —— 系统级虚拟相机 + 虚拟麦克风\n\n把整机摄像头画面与麦克风音频替换为虚拟源。**任意调用系统相机管线的 App**（系统相机、FaceTime、微信、Zoom、Snapchat、Instagram、TikTok）看到的都是虚拟内容，而不是物理传感器。\n\n- 相册视频循环播放作为相机画面（音轨同步作为麦克风）\n- 相册图片静帧，按约 30fps 重复送帧\n- 电脑 OBS / FFmpeg 推流（MPEG-TS over UDP/TCP），手机硬解注入\n- 预览、拍照、录像文件全部为虚拟内容\n- 按「音量减」弹出可拖动悬浮小窗，随时切换 / 禁用\n\n无卡密、无联网授权、无 UDID 上传。"
+                },
+                {
+                    "class": "DepictionScreenshotsView",
+                    "itemCornerRadius": 8,
+                    "itemSize": "{160, 346}",
+                    "screenshots": [
+                        {
+                            "url": "https://quite85.github.io/vcam/icons/shot1.png",
+                            "accessibilityText": "音量减小窗"
+                        },
+                        {
+                            "url": "https://quite85.github.io/vcam/icons/shot2.png",
+                            "accessibilityText": "OBS 推流地址"
+                        },
+                        {
+                            "url": "https://quite85.github.io/vcam/icons/shot3.png",
+                            "accessibilityText": "虚拟画面注入"
+                        }
+                    ]
+                },
+                {
+                    "class": "DepictionSeparatorView"
+                },
+                {
+                    "class": "DepictionMarkdownView",
+                    "markdown": "### 兼容性\n\n| 项目 | 支持情况 |\n| --- | --- |\n| iOS 版本 | 15.0 – 16.6.1 |\n| 越狱 | Dopamine（rootless/roothide）、palera1n、unc0ver、checkra1n |\n| 架构 | arm64e（A9 及以上）、arm64（旧 rootful） |\n| 依赖 | ElleKit 或 Cydia Substrate / Substitute |\n| 注入 | SpringBoard + mediaserverd + Camera + 各相机类 App |"
+                },
+                {
+                    "class": "DepictionMarkdownView",
+                    "markdown": "### 安装\n\n1. 安装本包后自动加载，**无需 respring**（UI 部分在 SpringBoard 内即时生效）。\n2. 打开任意相机 App，按一次「音量减」。\n3. 在悬浮小窗里选择 **视频 / 图片 / 电脑推流 / 禁用替换**。\n\n> rootless 版本安装到 `/var/jb/...`，请勿与 rootful 版同时安装。"
+                },
+                {
+                    "class": "DepictionMarkdownView",
+                    "markdown": "### OBS / 电脑推流\n\n**手机端**：小窗里点「电脑推流 / OBS」，会显示并复制一个地址，形如 `udp://192.168.1.20:5600`。\n\n**电脑端**：OBS → 设置 → 输出 → 输出模式选「高级」→ 流 → 编码器选 **FFmpeg 自定义输出**：\n\n```\n容器格式      : mpegts\n视频编码器    : libx264\n音频编码器    : aac\n输出目标      : udp://192.168.1.20:5600\n```\n\n推荐参数：`1080x1920`（竖屏）或 `1280x720`，**30fps**，profile `baseline`/`main`，关键帧间隔 **1s**，码率 4–8 Mbps（Wi-Fi）/ 10–15 Mbps（USB 网络共享）。\n\n> USB 网络共享（个人热点用数据线连电脑）比 Wi-Fi 稳定得多，延迟也能从 ~300ms 降到 ~120ms。"
+                },
+                {
+                    "class": "DepictionMarkdownView",
+                    "markdown": "### 免责声明\n\n本插件用于个人内容创作、直播画面替代，或物理摄像头/麦克风损坏时的应急方案。使用者需自行遵守所使用 App 的服务条款与当地法律法规。作者不对因使用本插件导致的账号处罚、内容纠纷承担责任。"
+                }
+            ]
+        },
+        {
+            "class": "DepictionStackView",
+            "tabname": "更新日志",
+            "views": [
+                {
+                    "class": "DepictionMarkdownView",
+                    "markdown": "#### 1.0.0\n\n- 首个版本\n- mediaserverd + AVFoundation 双层注入，系统级替换相机与麦克风\n- 相册视频（循环 + 自带音轨）/ 相册图片（30fps 重复帧）\n- OBS MPEG-TS(H.264+AAC) 接收，VideoToolbox 硬解 + AudioConverter 软解\n- 音量减悬浮小窗（短按弹窗、长按调音量、通话中不拦截）\n- 前后摄镜像、旋转、唇形同步微调\n- 禁用后完整恢复硬件相机与麦克风，无残帧残音"
+                }
+            ]
+        },
+        {
+            "class": "DepictionStackView",
+            "tabname": "常见问题",
+            "views": [
+                {
+                    "class": "DepictionMarkdownView",
+                    "markdown": "**Q：按音量减没反应？**\n\nA：确认设备没有处于通话中（通话时按设计不拦截音量键）。也可以在「设置 → VCam → 查看日志」里看注入是否成功。\n\n**Q：预览是虚拟的，但拍下来是真的？**\n\nA：说明 mediaserverd 层注入在你这版 iOS 上没成功、并且 App 层的拍照 hook 也被绕过了。请到「设置 → VCam」把日志发出来，并临时把「仅 App 层注入」打开试试。\n\n**Q：装了之后相机 App 打不开 / 黑屏？**\n\nA：到「设置 → VCam → 仅 App 层注入」打开，然后 `killall mediaserverd` 或重启一次。VCam 也有自动降级机制：如果注入导致 mediaserverd 连续异常退出，会自动切到 App 层模式并写进日志。\n\n**Q：OBS 那边显示推流正常，手机显示「等待 OBS」？**\n\nA：地址里必须用手机显示的 IP（不是 `127.0.0.1`）；UDP 端口要一致；确认电脑和手机在同一网段（或已开启 USB 网络共享）。"
+                }
+            ]
+        }
+    ]
+}

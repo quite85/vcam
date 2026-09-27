@@ -1,0 +1,18 @@
+Origin: VCam Repo
+Label: VCam Repo
+Suite: stable
+Version: 1.0
+Codename: ios
+Architectures: iphoneos-arm iphoneos-arm64 iphoneos-arm64e
+Components: main
+Description: iOS 15.0-16.6.1 系统级虚拟相机 + 虚拟麦克风
+Support: https://quite85.github.io
+Depiction: https://quite85.github.io/vcam/depiction/vcam.html
+SileoDepiction: https://quite85.github.io/vcam/depiction/vcam.json
+Date: Thu, 01 Jan 2026 00:00:00 UTC
+MD5Sum:
+ 00000000000000000000000000000000             1234 Packages
+ 00000000000000000000000000000000              567 Packages.gz
+SHA256:
+ 0000000000000000000000000000000000000000000000000000000000000000             1234 Packages
+ 0000000000000000000000000000000000000000000000000000000000000000              567 Packages.gz

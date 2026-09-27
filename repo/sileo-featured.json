@@ -1,0 +1,13 @@
+{
+    "class": "FeaturedBannersView",
+    "itemSize": "{296, 160}",
+    "itemCornerRadius": 8,
+    "banners": [
+        {
+            "url": "https://quite85.github.io/vcam/icons/vcam_banner.png",
+            "title": "VCam",
+            "package": "com.quite85.vcam",
+            "hideShadow": false
+        }
+    ]
+}

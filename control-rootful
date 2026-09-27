@@ -1,0 +1,25 @@
+Package: com.quite85.vcam
+Name: VCam
+Version: 1.0.0
+Architecture: iphoneos-arm
+Description: 系统级虚拟摄像头 + 虚拟麦克风（相册图片 / 相册视频 / OBS MPEG-TS 推流），iOS 15.0 - 16.6.1
+ 把整机摄像头画面与麦克风音频替换为虚拟源：相册视频循环播放、相册图片静帧（约 30fps 重复）、
+ 或接收电脑 OBS 推来的 MPEG-TS(H.264+AAC) 流并硬解注入。
+ 任意调用系统相机管线的 App（系统相机 / FaceTime / 微信 / Zoom / Snapchat / Instagram / TikTok）
+ 看到的都是虚拟内容，预览、拍照、录像文件全部为虚拟画面，音视频唇形同步。
+ 交互：按「音量减」弹出可拖动悬浮小窗，选择视频 / 图片 / OBS 推流 / 禁用替换。
+ 无卡密、无联网授权、无 UDID 上传，全部离线本地运行。
+ .
+ 仅用于个人内容创作、直播替代画面、或物理摄像头损坏时的应急替代方案。
+ 使用者需自行遵守各 App 的服务条款与当地法律法规。
+Homepage: https://quite85.github.io/vcam/depiction/vcam.html
+Depiction: https://quite85.github.io/vcam/depiction/vcam.html
+SileoDepiction: https://quite85.github.io/vcam/depiction/vcam.json
+Icon: https://quite85.github.io/vcam/icons/vcam.png
+Maintainer: yourname <you@quite85.github.io>
+Author: yourname <you@quite85.github.io>
+Section: Tweaks
+Depends: firmware (>= 15.0), firmware (<< 16.7), mobilesubstrate | ellekit
+Recommends: preferenceloader
+Conflicts: com.notaudren.vcam, com.audren.vcam
+Tag: purpose::extension, role::hacker

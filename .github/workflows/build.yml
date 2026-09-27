@@ -1,0 +1,156 @@
+# ============================================================================
+#  .github/workflows/build.yml
+#
+#  推送 tag（形如 v1.0.0）时：
+#    1) 在 macOS Runner 上安装 Theos
+#    2) 编译 rootful + rootless 两个 deb
+#    3) 生成 APT 源（Packages / Packages.gz / Release）
+#    4) 把 tag 对应的版本发布成 GitHub Release（附带两个 deb）
+#    5) 把整个 repo/ 目录部署到 GitHub Pages
+#
+#  为什么用 macos-latest：
+#    Theos 需要 Xcode 的 iOS SDK 与 clang 来交叉编译 arm64e，
+#    Linux Runner 上无法完整构建（可以用 theos-linux + 工具链，但更麻烦）。
+#
+#  使用前请改：
+#    - 环境变量 DOMAIN / REPO_PATH（第 30 行附近）
+#    - Settings → Pages → Source 选 "GitHub Actions"
+# ============================================================================
+name: Build & Publish VCam
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      enable_obs:
+        description: '是否编译 OBS(FFmpeg) 支持（第一次请留 0，编译必定成功）'
+        required: false
+        default: '0'
+        type: choice
+        options: ['1', '0']
+
+env:
+  # GitHub Pages 部署：仓库名 vcam → 基地址 https://quite85.github.io/vcam
+  # 所以 DOMAIN=quite85.github.io、REPO_PATH=/vcam
+  DOMAIN: quite85.github.io
+  REPO_PATH: /vcam
+  ORIGIN: VCam Repo
+  LABEL: VCam Repo
+  VCAM_ENABLE_OBS: ${{ github.event.inputs.enable_obs || '0' }}
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: vcam-publish
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Theos
+        run: |
+          set -e
+          export THEOS="$HOME/theos"
+          git clone --recursive https://github.com/theos/theos.git "$THEOS"
+          echo "THEOS=$THEOS" >> "$GITHUB_ENV"
+          echo "$THEOS/bin" >> "$GITHUB_PATH"
+          # ldid（签名 iOS 二进制必需）
+          brew install ldid dpkg xz bzip2 || true
+
+      - name: 安装 FFmpeg 头文件与静态库（可选）
+        if: env.VCAM_ENABLE_OBS == '1'
+        run: |
+          set -e
+          export THEOS="$HOME/theos"
+          # 这里有两条路线，任选其一：
+          #  A) 用社区脚本从源码构建（慢，约 20 分钟）
+          #  B) 从你自己的 release / 制品仓库下载预编译产物
+          #
+          # 下面默认走 B，请把 URL 换成你自己的预编译包。
+          mkdir -p "$THEOS/vendor/include" "$THEOS/vendor/lib"
+          if [ -n "${VCAM_FFMPEG_URL:-}" ]; then
+            curl -L "$VCAM_FFMPEG_URL" -o /tmp/ffmpeg.tar.gz
+            tar -xzf /tmp/ffmpeg.tar.gz -C /tmp
+            ./scripts/ffmpeg-deps.sh /tmp/ffmpeg
+          else
+            echo "::warning::未配置 VCAM_FFMPEG_URL，本次将退化为 VCAM_ENABLE_OBS=0 构建轻量包"
+            echo "VCAM_ENABLE_OBS=0" >> "$GITHUB_ENV"
+          fi
+
+      - name: 生成图标
+        run: |
+          chmod +x scripts/*.sh
+          ./scripts/make-icon.sh 256 || true
+
+      - name: 把 mediaserverd filter 放进 layout（必须，在编译之前）
+        run: |
+          set -e
+          # 关键：Theos 只会自动安装与 tweak 同名的 VCam.plist。
+          # VCam-mediaserverd.plist 名字不同，必须放进 layout/ 才会被打进 deb。
+          # 这一步做了之后，用户装完 deb 就自带系统级 filter，不需要再手动 cp。
+          mkdir -p layout/Library/MobileSubstrate/DynamicLibraries
+          cp -f VCam-mediaserverd.plist layout/Library/MobileSubstrate/DynamicLibraries/
+          echo "layout 内容："
+          find layout -type f
+
+      - name: 编译两个 deb
+        run: |
+          set -e
+          chmod +x scripts/build.sh
+          ./scripts/build.sh
+          echo "--- 产物 ---"
+          ls -lh packages/
+          echo "--- 抽查 deb 内容（确认 filter 与中文字段）---"
+          for d in packages/*.deb; do
+            echo "== $d"
+            dpkg-deb -c "$d" | grep -i mobileSubstrate || true
+            dpkg-deb -f "$d" Package Version Architecture Depends || true
+          done
+
+      - name: 生成 APT 源
+        run: |
+          set -e
+          chmod +x scripts/make-repo.sh
+          DOMAIN="${{ env.DOMAIN }}" REPO_PATH="${{ env.REPO_PATH }}" \
+            ./scripts/make-repo.sh
+          echo "--- Packages/GitHub Pages 内容 ---"
+          ls -R repo | head -50
+
+      - name: 上传 deb 制品
+        uses: actions/upload-artifact@v4
+        with:
+          name: vcam-debs
+          path: packages/*.deb
+
+      - name: 创建 GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: packages/*.deb
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 打包 Pages 产物
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: repo
+
+  deploy-pages:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: 部署到 GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

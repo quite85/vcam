@@ -1,0 +1,10 @@
+{
+    entry = {
+        bundle = "VCamPrefs";
+        cell = PSLinkCell;
+        detail = "VCamPrefsRootListController";
+        icon = "vcam.png";
+        isController = 1;
+        label = "VCam";
+    };
+}
