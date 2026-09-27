@@ -1,0 +1,50 @@
+修正 VideoToolbox 解码会话的参数语义与属性用法
+
+在核对 SDK 头文件时发现 VCamVideoToolboxDecoder.m 有两处错误：
+一处是语义错误（能编译但行为不对），一处会踩未定义行为。
+
+1) VTDecompressionSessionCreate 的第三个参数用错了键族
+   权威签名（VTDecompressionSession.h）：
+     VTDecompressionSessionCreate(
+         CFAllocatorRef allocator,
+         CMVideoFormatDescriptionRef videoFormatDescription,
+         CFDictionaryRef videoDecoderSpecification,   // ← 第三个
+         CFDictionaryRef destinationImageBufferAttributes,
+         const VTDecompressionOutputCallbackRecord *outputCallback,
+         VTDecompressionSessionRef *decompressionSessionOut);
+
+   videoDecoderSpecification 只接受 kVTVideoDecoderSpecification_* 系列的键。
+   原来我把 kVTDecompressionPropertyKey_RealTime / _ThreadCount /
+   _OutputPoolRequestedMinimumBufferCount 塞了进去 —— 那三个是
+   VTSessionSetProperty 用的属性键，放在 decoderSpecification 里会被忽略。
+   已改为：
+     · decoderSpecification 使用
+       kVTVideoDecoderSpecification_RequireHardwareAcceleratedVideoDecoder
+       （明确要求硬解，OBS 1080p30 软解顶不住）
+     · RealTime / ThreadCount 改为会话创建后用 VTSessionSetProperty 设置
+
+2) MaximizePowerEfficiency 与 RealTime 不能同时设置
+   VTDecompressionProperties.h 原文：
+     "Setting both kVTDecompressionPropertyKey_MaximizePowerEfficiency and
+      kVTDecompressionPropertyKey_RealTime is unsupported and results in
+      undefined behavior."
+   原来两个都设了（RealTime=true 且 MaximizePowerEfficiency=false），
+   已改成只设 RealTime。
+
+3) VTSessionSetProperty 带 warn_unused_result
+   Theos 的 -Werror 下不接返回值会编译失败。已改为接住 OSStatus 并在
+   失败时打日志（不再静默忽略）。
+
+核对结论（本次已逐条对照 SDK 头文件确认存在且签名一致）
+  · kVTDecompressionPropertyKey_RealTime / _ThreadCount /
+    _MaximizePowerEfficiency / _OutputPoolRequestedMinimumBufferCount —— 均存在
+  · kVTVideoDecoderSpecification_RequireHardwareAcceleratedVideoDecoder —— 存在
+  · VTDecompressionSessionDecodeFrame 的 (session, sampleBuffer,
+    decodeFlags, sourceFrameRefCon, infoFlagsOut) 参数顺序 —— 一致
+  · VTDecompressionOutputCallbackRecord 字段名 —— 一致
+
+影响范围
+--------
+仅 Core/VCamVideoToolboxDecoder.m。该文件只在 VCAM_ENABLE_OBS=1 时参与编译，
+当前 CI 用 VCAM_ENABLE_OBS=0，所以这一轮改动不影响当次构建结果，
+属于提前拆掉后面开 OBS 时会踩的雷。

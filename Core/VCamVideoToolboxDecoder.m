@@ -263,6 +263,7 @@ static void VCamDecoderOutputCallback(void *decompressionOutputRefCon,
         return NO;
     }
 
+    // ATTRS = destinationImageBufferAttributes：决定输出像素缓冲的格式。
     NSDictionary *attrs = @{
         (id)kCVPixelBufferPixelFormatTypeKey: @(kCVPixelFormatType_420YpCbCr8BiPlanarFullRange),
         (id)kCVPixelBufferIOSurfacePropertiesKey: @{},
@@ -270,11 +271,18 @@ static void VCamDecoderOutputCallback(void *decompressionOutputRefCon,
         (id)kCVPixelBufferWidthKey: @(MAX(2.0, self.expectedSize.width)),
         (id)kCVPixelBufferHeightKey: @(MAX(2.0, self.expectedSize.height)),
     };
+
+    // ⚠️ 修正：VTDecompressionSessionCreate 的第三个参数是
+    //      videoDecoderSpecification，它接受的是 kVTVideoDecoderSpecification_* 系列的键，
+    //      **不是** kVTDecompressionPropertyKey_*（那是给 VTSessionSetProperty 用的）。
+    //      原来这里把 RealTime / ThreadCount / OutputPoolRequestedMinimumBufferCount
+    //      塞进了 decoderSpecification，虽然能编译但语义错误（会被解码器忽略）。
+    //      正确做法：
+    //        · decoderSpecification 用 kVTVideoDecoderSpecification_RequireHardwareAcceleratedVideoDecoder
+    //          明确要求硬件解码器（OBS 1080p30 软解顶不住）
+    //        · RealTime / ThreadCount 等属性在会话创建后用 VTSessionSetProperty 设置
     NSDictionary *spec = @{
-        (id)kVTDecompressionPropertyKey_RealTime: @(YES),
-        (id)kVTDecompressionPropertyKey_ThreadCount: @(2),
-        // 允许输出不按显示顺序（低延迟优先），OBS 推流一般没有 B 帧
-        (id)kVTDecompressionPropertyKey_OutputPoolRequestedMinimumBufferCount: @(6),
+        (id)kVTVideoDecoderSpecification_RequireHardwareAcceleratedVideoDecoder: @(YES),
     };
 
     VTDecompressionSessionRef session = NULL;
@@ -293,9 +301,30 @@ static void VCamDecoderOutputCallback(void *decompressionOutputRefCon,
         CFRelease(fmt);
         return NO;
     }
-    // 低延迟：禁用帧重排序缓冲
-    VTSessionSetProperty(session, kVTDecompressionPropertyKey_RealTime, kCFBooleanTrue);
-    VTSessionSetProperty(session, kVTDecompressionPropertyKey_MaximizePowerEfficiency, kCFBooleanFalse);
+    // 低延迟调优：这些是"会话属性"，必须用 VTSessionSetProperty 设置，
+    // 不能塞进 VTDecompressionSessionCreate 的 decoderSpecification。
+    //
+    // ⚠️ 头文件（VTDecompressionProperties.h）明确写着：
+    //    "Setting both kVTDecompressionPropertyKey_MaximizePowerEfficiency and
+    //     kVTDecompressionPropertyKey_RealTime is unsupported and results in
+    //     undefined behavior."
+    //   所以这里**只设 RealTime**，绝不两个都设。
+    //
+    // VTSessionSetProperty 带 warn_unused_result，返回值必须接住，
+    // 否则 -Wunused-result 会在 -Werror 下失败。
+    OSStatus rtErr = VTSessionSetProperty(session,
+                                          kVTDecompressionPropertyKey_RealTime,
+                                          kCFBooleanTrue);
+    if (rtErr != noErr) {
+        VCamLog(@"[vt] 设置 RealTime 失败 %d（继续，只是延迟略高）", (int)rtErr);
+    }
+    // 线程数：解码器可用线程上限。OBS 1080p30 用 2 条足够，多了反而抢 CPU。
+    OSStatus thErr = VTSessionSetProperty(session,
+                                          kVTDecompressionPropertyKey_ThreadCount,
+                                          (__bridge CFTypeRef)@(2));
+    if (thErr != noErr) {
+        VCamLog(@"[vt] 设置 ThreadCount 失败 %d", (int)thErr);
+    }
 
     // 拿到真实分辨率
     CMVideoDimensions dims = CMVideoFormatDescriptionGetDimensions(fmt);
