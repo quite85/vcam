@@ -41,6 +41,6 @@ TWEAK_NAME = VirtualCamera
 VirtualCamera_FILES = Stage1.x
 
 VirtualCamera_CFLAGS = -fobjc-arc -Wno-everything
-VirtualCamera_FRAMEWORKS = Foundation
+VirtualCamera_FRAMEWORKS = Foundation AVFoundation
 
 include $(THEOS_MAKE_PATH)/tweak.mk

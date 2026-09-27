@@ -1,23 +1,17 @@
 Package: com.quite85.vcamstage1
-Name: VirtualCamera 测试 Stage1 (零 hook)
-Version: 1.0.1
+Name: VirtualCamera 测试 Stage1
+Version: 1.0.2
 Architecture: iphoneos-arm64
-Description: VCam 诊断构建 Stage1 —— 零 hook 最小注入验证。
- 本包**不含任何 %hook**，只做一件事：被注入时写一行日志。
- 用途：回答唯一一个问题 —— "把我们的 dylib 注入普通 App 会不会出事？"
+Description: VCam 诊断包 —— 验证插件注入是否生效。
+ 本包**不含任何 %hook**（不 hook 任何方法），只做三件事：
+ · 被注入时写一行日志到多个可写位置
+ · NSLog 输出注入信息（电脑上可实时看到）
+ · 在 SpringBoard 里监听音量键（按一下音量键就能验证是否加载成功）
  .
- 特征：
- · tweak 名 VirtualCamera（避开旧插件的 VCam.dylib/VCam.plist 同名冲突）
- · filter 只列 com.apple.Preferences（设置 App）
- · 不注入 SpringBoard、不注入 mediaserverd 等系统守护进程
- · 不 import AVFoundation、不碰相机与音频
- · 不加载工程里的 Core/UI/Media/Mic 任何代码
+ filter 用**标准 XML plist**（不是 Theos 的宽松 JSON），
+ 同时包含 springboard / Preferences / Safari 三个 Bundle。
  .
- 风险极小：即使 dylib 加载有问题，最坏也只是设置 App 打不开。
- .
- 验证：打开「设置」App，然后看
- /var/mobile/Library/VirtualCamera/stage1.log
- 应出现 "injected com.apple.Preferences pid=..."
+ 风险极低：不 hook 方法、不碰相机与音频数据、不注入系统守护进程。
 Homepage: https://github.com/quite85/vcam
 Maintainer: quite85 <quite85@users.noreply.github.com>
 Author: quite85 <quite85@users.noreply.github.com>
