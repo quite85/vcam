@@ -150,13 +150,13 @@ build_one() {
         return "$make_rc"
     fi
 
-    # 说明：这里刻意**不再**每轮清空 packages/（见上面的注释）。
-    #   正确做法是每轮打完把 Theos 那份**移走**，
-    #   这样既不会有残留干扰下一轮，也不会丢掉本轮产物。
-
-    # 取本轮生成的 deb（优先我们自己的 packages/，其次 Theos 的）
+    # 取本轮生成的 deb：优先从 Theos 的输出目录找（保留原始文件名做判定），
+    # 找不到再退回到我们自己的 packages/。
     local src
-    src="$(ls -t "$ROOT_DIR"/packages/*.deb "$THEOS"/packages/*.deb 2>/dev/null | head -n 1 || true)"
+    src="$(ls -t "$THEOS"/packages/*.deb 2>/dev/null | head -n 1 || true)"
+    if [ -z "$src" ]; then
+        src="$(ls -t "$ROOT_DIR"/packages/*.deb 2>/dev/null | head -n 1 || true)"
+    fi
     if [ -z "$src" ]; then
         echo "❌ $tag 打包失败，请查看 /tmp/vcam-build-$tag.log" >&2
         exit 1
@@ -165,6 +165,18 @@ build_one() {
     local arch_name="iphoneos-arm64"
     local dest="$OUT_DIR/${PKG_ID}_${VERSION}_${arch_name}-${tag}.deb"
     cp -f "$src" "$dest"
+
+    # ⚠️ 把 Theos 命名的原始 deb 删掉，只保留上面这份规范命名的。
+    #    Theos 产出的名字是 com.<pkg>_<ver>_iphoneos-arm.deb 或 [...]_iphoneos-arm64.deb
+    #    （取决于 control 里的 Architecture），既不带 -rootful/-rootless 后缀，
+    #    也和我们的命名重复。
+    #    不删的话 packages/ 里会同时存在两份内容相同、名字不同的 deb，
+    #    make-repo.sh 把它们都拷进 debs/ 并各写一条 Packages 记录，
+    #    于是源里出现 4 条记录（实际只有 2 个包），用户不知道该装哪个。
+    if [ "$src" != "$dest" ]; then
+        rm -f "$src" 2>/dev/null || true
+        echo "   （已移除 Theos 原始命名产物：$(basename "$src")）"
+    fi
     echo "✅ 产出：$(basename "$dest")"
 }
 
