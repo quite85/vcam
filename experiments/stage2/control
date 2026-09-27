@@ -1,0 +1,21 @@
+Package: com.quite85.vcamstage2
+Name: VirtualCamera 测试 Stage2
+Version: 2.0.0
+Architecture: iphoneos-arm64
+Description: VCam 虚拟相机最小可用版（Stage2）。
+ 基于两个开源 iOS 虚拟摄像头项目验证过的做法：
+ · 注入面极小：filter 只列 SpringBoard / Safari / Preferences 三个 Bundle
+ · **完全不注入 mediaserverd 等系统守护进程**
+ · 每个 install 都包在 @try/@catch 里，构造阶段绝不抛异常
+ · 每一步都 NSLog，电脑上实时可见
+ .
+ 功能：SpringBoard 里一个可拖动悬浮按钮（📷）+ 音量键提示；
+ 点按钮 → 选相册视频 → 循环播放作为虚拟相机帧源。
+ .
+ 本版**不含**：OBS 推流、麦克风替换、拍照/录像替换（后续再加）。
+Homepage: https://github.com/quite85/vcam
+Maintainer: quite85 <quite85@users.noreply.github.com>
+Author: quite85 <quite85@users.noreply.github.com>
+Section: Tweaks
+Depends: firmware (>= 15.0), mobilesubstrate | ellekit
+Tag: purpose::extension, role::hacker
