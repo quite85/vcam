@@ -63,26 +63,46 @@ jobs:
 
       - name: 校验产物内容
         run: |
-          set -e
+          # 注意：不要开 set -e。
+          # 这里大量使用 grep 过滤输出，而 grep 在"无匹配"时返回 1，
+          # 配合 set -e 会让整个步骤失败，报一个与真实问题无关的
+          # "Process completed with exit code 1"。
+          # 校验结果一律通过变量判断，不依赖退出码。
+          set +e
           cd experiments/stage1
           D=$(ls -t packages/*.deb "$THEOS"/packages/*.deb 2>/dev/null | head -1)
-          echo "deb: $D"
+          if [ -z "$D" ]; then
+            echo "❌ 没有找到 deb"
+            exit 1
+          fi
+          echo "deb: $D  ($(wc -c < "$D" | tr -d ' ') 字节)"
           echo ""
           echo "=== 安装的文件 ==="
-          dpkg-deb -c "$D" 2>/dev/null | awk '{print "  " $6}' | grep -v '/$'
+          dpkg-deb -c "$D" 2>/dev/null | awk '{print "  " $6}' | grep -v '/$' || true
           echo ""
-          echo "=== dylib 架构 ==="
           T=$(mktemp -d); dpkg-deb -x "$D" "$T" 2>/dev/null
-          find "$T" -name '*.dylib' -exec file {} \;
+          echo "=== dylib 架构 ==="
+          find "$T" -name '*.dylib' -exec file {} \; || true
           echo ""
           echo "=== filter 内容 ==="
-          find "$T" -name '*.plist' -exec sh -c 'echo "  [$1]"; cat "$1" | sed "s/^/    /"' _ {} \;
+          find "$T" -name '*.plist' -exec sh -c 'echo "  [$1]"; cat "$1" | sed "s/^/    /"' _ {} \; || true
           echo ""
-          echo "=== 检查是否含 mediaserverd 注入（应为空 filter 或不存在）==="
-          if find "$T" -name 'VCam-mediaserverd.plist' | grep -q .; then
-            echo "  ⚠️ 含 mediaserverd filter —— Stage1 不该有"
+          echo "=== 关键检查 ==="
+          if find "$T" -name 'VCam-mediaserverd.plist' 2>/dev/null | grep -q .; then
+            echo "  ⚠️  含 mediaserverd filter —— Stage1 不该有"
           else
             echo "  ✅ 不含 mediaserverd filter（符合预期）"
+          fi
+          if find "$T" -name 'VirtualCamera.dylib' 2>/dev/null | grep -q .; then
+            echo "  ✅ dylib 名为 VirtualCamera.dylib（已避开旧插件的 VCam.dylib）"
+          else
+            echo "  ⚠️  未找到 VirtualCamera.dylib"
+          fi
+          FILTER=$(find "$T" -name 'VirtualCamera.plist' | head -1)
+          if [ -n "$FILTER" ] && grep -q 'com.apple.Preferences' "$FILTER"; then
+            echo "  ✅ filter 只注入 com.apple.Preferences"
+          else
+            echo "  ⚠️  filter 内容不符预期"
           fi
           rm -rf "$T"
 
