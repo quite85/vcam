@@ -32,6 +32,10 @@
 #import <AVFoundation/AVFoundation.h>
 #import <CoreMedia/CoreMedia.h>
 #import <CoreVideo/CoreVideo.h>
+// class_addMethod 声明在此。不导入会报：
+//     error: conflicting types for 'class_addMethod'
+// （因为 clang 把它隐式声明成返回 int，而真实签名返回 BOOL）
+#import <objc/runtime.h>
 
 static NSString *const kStage2LogPath = @"/var/mobile/Library/VirtualCamera/stage2.log";
 
@@ -349,19 +353,19 @@ static void S2SetupFloatButton(void) {
         gFloatButton.layer.shadowOpacity = 0.3;
         gFloatButton.layer.shadowRadius = 4;
 
-        UIPanGestureRecognizer *pan =
-            [[UIPanGestureRecognizer alloc] initWithTarget:nil action:nil];
-        [gFloatButton addGestureRecognizer:pan];
+        // 手势：pan（拖动）与 tap（点按弹菜单）
+        // 注意先用 class_addMethod 把 C 函数挂成方法，再创建手势并指向它。
+        // 之前先建手势再 addMethod 是错的顺序（手势 target 在创建时就固定了）。
         class_addMethod([gFloatButton class], @selector(handlePan:),
                         (IMP)S2HandlePan, "v@:@");
-        // 手势的 target 需要在添加后再设（这里直接重建）
-        [gFloatButton removeGestureRecognizer:pan];
-        pan = [[UIPanGestureRecognizer alloc] initWithTarget:gFloatButton
-                                                      action:@selector(handlePan:)];
-        [gFloatButton addGestureRecognizer:pan];
-
         class_addMethod([gFloatButton class], @selector(handleTap:),
                         (IMP)S2HandleTap, "v@:@");
+
+        UIPanGestureRecognizer *pan =
+            [[UIPanGestureRecognizer alloc] initWithTarget:gFloatButton
+                                                    action:@selector(handlePan:)];
+        [gFloatButton addGestureRecognizer:pan];
+
         UITapGestureRecognizer *tap =
             [[UITapGestureRecognizer alloc] initWithTarget:gFloatButton
                                                     action:@selector(handleTap:)];
