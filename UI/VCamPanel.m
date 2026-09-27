@@ -364,12 +364,30 @@ typedef NS_ENUM(NSInteger, VCamButtonStyle) {
 }
 
 - (void)_resizeToFit {
-    [self.panelView layoutIfNeeded];
-    CGSize fit = [self.panelView.systemLayoutSizeFittingSize:UILayoutFittingCompressedSize];
+    // ⚠️ 注意：UIVisualEffectView 自身没有 systemLayoutSizeFittingSize:，
+    //    直接调用会报 "property 'systemLayoutSizeFittingSize' not found on
+    //    object of type 'UIVisualEffectView *'"。
+    //    Auto Layout 尺寸计算要走它的 contentView。
+    //    另外 UIVisualEffectView 的 contentView 有系统预设的约束，
+    //    所以用 systemLayoutSizeFittingSize:withHorizontalFittingPriority:
+    //    verticalFittingPriority: 明确指定宽度（宽度由我们固定为 232）。
+    UIView *content = self.panelView.contentView ?: self.panelView;
+    [content layoutIfNeeded];
+
+    CGFloat width = 232;
+    CGSize fit = [content systemLayoutSizeFittingSize:CGSizeMake(width, 0)
+                     withHorizontalFittingPriority:UILayoutPriorityRequired
+                           verticalFittingPriority:UILayoutPriorityFittingSizeLevel];
+
     CGRect f = self.panelView.frame;
-    f.size.width = 232;
+    f.size.width = width;
     f.size.height = MAX(150, fit.height);
     self.panelView.frame = f;
+
+    // 内容宽度也跟着固定，否则 contentView 会按自身约束把宽度撑开
+    CGRect cf = content.frame;
+    cf.size.width = width;
+    content.frame = cf;
 }
 
 - (void)_pickVideo {
@@ -550,14 +568,19 @@ typedef NS_ENUM(NSInteger, VCamButtonStyle) {
             }];
             break;
         case UIGestureRecognizerStateChanged: {
-            CGPoint c = CGPointMake(_panStartCenter.x + t.x, _panStartCenter.y + t.y);
-            CGSize bounds = v.superview.bounds.size;
-            CGFloat halfW = v.bounds.size.width / 2.0;
-            CGFloat halfH = v.bounds.size.height / 2.0;
+            CGPoint dragCenter = CGPointMake(_panStartCenter.x + t.x, _panStartCenter.y + t.y);
+            // ⚠️ 变量名必须与下面 Ended/Cancelled 分支里的不同。
+            //    两个 case 各自声明同名变量（即使都套了 {}）会让 clang 报：
+            //        error: cannot jump from switch statement to this case label
+            //    原因是 case 标签可以跳到这些初始化之后，C++ 判为"跳过变量初始化"。
+            //    给每个 case 用独立变量名即可彻底避免。
+            CGSize dragBounds = v.superview.bounds.size;
+            CGFloat dragHalfW = v.bounds.size.width / 2.0;
+            CGFloat dragHalfH = v.bounds.size.height / 2.0;
             // 允许部分出界，但保留可抓取区域
-            c.x = MAX(halfW - 40, MIN(bounds.width - halfW + 40, c.x));
-            c.y = MAX(halfH + 20, MIN(bounds.height - halfH - 20, c.y));
-            v.center = c;
+            dragCenter.x = MAX(dragHalfW - 40, MIN(dragBounds.width - dragHalfW + 40, dragCenter.x));
+            dragCenter.y = MAX(dragHalfH + 20, MIN(dragBounds.height - dragHalfH - 20, dragCenter.y));
+            v.center = dragCenter;
             break;
         }
         case UIGestureRecognizerStateEnded:
@@ -567,20 +590,21 @@ typedef NS_ENUM(NSInteger, VCamButtonStyle) {
                 v.alpha = 1.0;
             }];
             // 贴边：靠近左右边缘则吸过去
-            CGSize bounds = v.superview.bounds.size;
-            CGFloat halfW = v.bounds.size.width / 2.0;
-            CGFloat margin = 6;
-            CGPoint c = v.center;
-            CGFloat speed = [pan velocityInView:v.superview].x;
-            BOOL toLeft = (c.x < bounds.width / 2.0);
-            if (fabs(speed) > 300) toLeft = (speed < 0);
-            c.x = toLeft ? (halfW + margin) : (bounds.width - halfW - margin);
+            CGSize dockBounds = v.superview.bounds.size;
+            CGFloat dockHalfW = v.bounds.size.width / 2.0;
+            CGFloat dockMargin = 6;
+            CGPoint dockCenter = v.center;
+            CGFloat dockSpeed = [pan velocityInView:v.superview].x;
+            BOOL dockToLeft = (dockCenter.x < dockBounds.width / 2.0);
+            if (fabs(dockSpeed) > 300) dockToLeft = (dockSpeed < 0);
+            dockCenter.x = dockToLeft ? (dockHalfW + dockMargin)
+                                      : (dockBounds.width - dockHalfW - dockMargin);
             [UIView animateWithDuration:0.26
                                   delay:0
                  usingSpringWithDamping:0.85
                   initialSpringVelocity:0.3
                                 options:UIViewAnimationOptionCurveEaseOut
-                             animations:^{ v.center = c; }
+                             animations:^{ v.center = dockCenter; }
                              completion:nil];
             break;
         }
