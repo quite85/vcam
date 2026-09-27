@@ -554,62 +554,113 @@ typedef NS_ENUM(NSInteger, VCamButtonStyle) {
 
 #pragma mark - 拖动 / 贴边
 
+/// 把"拖动时可以发生的所有 UIView 动画"集中在这里，**不要放进 _handlePan 的 switch 里**。
+///
+/// 为什么：ARC 下 block 字面量（例如 animateWithDuration:animations:^{...}）
+/// 捕获对象后是一个"具有非平凡析构的对象"。
+/// C++ 规则禁止 case 标签跳过这类对象的初始化，clang 会报：
+///     error: cannot jump from switch statement to this case label
+///     note: jump enters lifetime of block which strongly captures a variable
+/// 而且这个错误**不会**因为给每个 case 套 {} 或改变量名而消失
+/// （本项目在 UI/VCamPanel.m 上真实踩过，四条 case 标签全报）。
+///
+/// 所以正确做法是：switch 里只做"算数值 + 赋值"，
+/// 所有带 block 的动画调用一律移到 switch 之外。
+- (void)_animatePanel:(UIView *)v
+           liftAmount:(CGFloat)scale
+             liftAlpha:(CGFloat)alpha
+             duration:(NSTimeInterval)duration
+           springFlag:(BOOL)spring {
+    if (!v) return;
+    if (spring) {
+        [UIView animateWithDuration:duration
+                              delay:0
+             usingSpringWithDamping:0.85
+              initialSpringVelocity:0.3
+                            options:UIViewAnimationOptionCurveEaseOut
+                         animations:^{
+            v.transform = CGAffineTransformIdentity;
+            v.alpha = 1.0;
+        } completion:nil];
+    } else {
+        [UIView animateWithDuration:duration animations:^{
+            v.transform = CGAffineTransformMakeScale(scale, scale);
+            v.alpha = alpha;
+        }];
+    }
+}
+
 - (void)_handlePan:(UIPanGestureRecognizer *)pan {
     UIView *v = self.panelView;
     if (!v) return;
     CGPoint t = [pan translationInView:v.superview];
 
+    // 这里只准备"数值"，绝不在这里写 block（原因见 _animatePanel: 的注释）
+    BOOL doLift = NO, doSettle = NO, doDock = NO;
+    CGPoint dockTarget = CGPointZero;
+
     switch (pan.state) {
         case UIGestureRecognizerStateBegan:
             _panStartCenter = v.center;
-            [UIView animateWithDuration:0.12 animations:^{
-                v.transform = CGAffineTransformMakeScale(1.03, 1.03);
-                v.alpha = 0.96;
-            }];
+            doLift = YES;
             break;
+
         case UIGestureRecognizerStateChanged: {
-            CGPoint dragCenter = CGPointMake(_panStartCenter.x + t.x, _panStartCenter.y + t.y);
-            // ⚠️ 变量名必须与下面 Ended/Cancelled 分支里的不同。
-            //    两个 case 各自声明同名变量（即使都套了 {}）会让 clang 报：
-            //        error: cannot jump from switch statement to this case label
-            //    原因是 case 标签可以跳到这些初始化之后，C++ 判为"跳过变量初始化"。
-            //    给每个 case 用独立变量名即可彻底避免。
+            // 变量名与下面分支保持不同，避免"跳过变量初始化"（另一种同类问题）
+            CGPoint dragCenter = CGPointMake(_panStartCenter.x + t.x,
+                                            _panStartCenter.y + t.y);
             CGSize dragBounds = v.superview.bounds.size;
             CGFloat dragHalfW = v.bounds.size.width / 2.0;
             CGFloat dragHalfH = v.bounds.size.height / 2.0;
-            // 允许部分出界，但保留可抓取区域
-            dragCenter.x = MAX(dragHalfW - 40, MIN(dragBounds.width - dragHalfW + 40, dragCenter.x));
-            dragCenter.y = MAX(dragHalfH + 20, MIN(dragBounds.height - dragHalfH - 20, dragCenter.y));
+            // 允许部分出界，但保留可抓取区域，避免把面板拖到完全点不到的位置
+            dragCenter.x = MAX(dragHalfW - 40,
+                               MIN(dragBounds.width - dragHalfW + 40, dragCenter.x));
+            dragCenter.y = MAX(dragHalfH + 20,
+                               MIN(dragBounds.height - dragHalfH - 20, dragCenter.y));
             v.center = dragCenter;
             break;
         }
+
         case UIGestureRecognizerStateEnded:
         case UIGestureRecognizerStateCancelled: {
-            [UIView animateWithDuration:0.2 animations:^{
-                v.transform = CGAffineTransformIdentity;
-                v.alpha = 1.0;
-            }];
-            // 贴边：靠近左右边缘则吸过去
+            doSettle = YES;
+            // 贴边：靠近左右边缘则吸过去；甩动速度大时按方向判定
             CGSize dockBounds = v.superview.bounds.size;
             CGFloat dockHalfW = v.bounds.size.width / 2.0;
             CGFloat dockMargin = 6;
-            CGPoint dockCenter = v.center;
             CGFloat dockSpeed = [pan velocityInView:v.superview].x;
-            BOOL dockToLeft = (dockCenter.x < dockBounds.width / 2.0);
+            BOOL dockToLeft = (v.center.x < dockBounds.width / 2.0);
             if (fabs(dockSpeed) > 300) dockToLeft = (dockSpeed < 0);
-            dockCenter.x = dockToLeft ? (dockHalfW + dockMargin)
-                                      : (dockBounds.width - dockHalfW - dockMargin);
-            [UIView animateWithDuration:0.26
-                                  delay:0
-                 usingSpringWithDamping:0.85
-                  initialSpringVelocity:0.3
-                                options:UIViewAnimationOptionCurveEaseOut
-                             animations:^{ v.center = dockCenter; }
-                             completion:nil];
+            dockTarget = CGPointMake(dockToLeft ? (dockHalfW + dockMargin)
+                                               : (dockBounds.width - dockHalfW - dockMargin),
+                                     v.center.y);
+            doDock = YES;
             break;
         }
+
+        case UIGestureRecognizerStatePossible:
+        case UIGestureRecognizerStateFailed:
         default:
             break;
+    }
+
+    // ---- block 动画统一放在 switch 之外 ----
+    if (doLift) {
+        [self _animatePanel:v liftAmount:1.03 liftAlpha:0.96 duration:0.12 springFlag:NO];
+    }
+    if (doSettle) {
+        // 先复位缩放与透明度（弹性动画同时完成"归位"）
+        [self _animatePanel:v liftAmount:1.0 liftAlpha:1.0 duration:0.2 springFlag:YES];
+    }
+    if (doDock) {
+        [UIView animateWithDuration:0.26
+                              delay:0
+             usingSpringWithDamping:0.85
+              initialSpringVelocity:0.3
+                            options:UIViewAnimationOptionCurveEaseOut
+                         animations:^{
+            v.center = dockTarget;
+        } completion:nil];
     }
 }
 

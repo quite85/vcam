@@ -152,7 +152,10 @@ jobs:
           #      "virtual" 文件名、行号也对不上，很难定位。
           #      这里先对真实源文件跑一遍 -fsyntax-only，报错位置精确到文件:行:列。
           #
-          # 说明：这一步与正式编译用同一套 -I 与框架；失败不影响后面的正式编译。
+          # ⚠️ set +e：这一步是**诊断工具**，绝不能因为某个外部命令返回非 0
+          #    就把整步标成失败（GitHub 的 run 默认带 -e）。
+          #    全部失败判定都走下面的 FAILED 变量。
+          set +e
           export THEOS="$HOME/theos"
           SDK="$THEOS/sdks/iPhoneOS${VCAM_SDK_VERSION}.sdk"
           [ -d "$SDK" ] || SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
@@ -173,26 +176,24 @@ jobs:
           done
 
           FAILED=0
+          OKCOUNT=0
           for src in UI/VCamPanel.m UI/VCamPickerController.m UI/VCamVolumeHook.m \
                      UI/VCamVideoDataOutputProxy.m UI/VCamPreviewOverlay.m UI/VCamHUD.m \
                      Media/VCamMovieFileInjector.m Media/VCamPhotoOutputInjector.m \
                      Mic/VCamMicInjector.m; do
-            echo "----- $src -----"
-            # 只把 **stderr** 写进临时文件（clang 的诊断都走 stderr）。
-            # 若把 stdout 也一起重定向，文件永远非空，判定就失去意义。
             rm -f /tmp/synerr.txt
             # shellcheck disable=SC2086
             xcrun -sdk iphoneos clang $COMMON $FRAMEWORKS "$src" 2>/tmp/synerr.txt
             rc=$?
-            if [ -s /tmp/synerr.txt ]; then
+            if [ -s /tmp/synerr.txt ] || [ "$rc" -ne 0 ]; then
+              echo "----- $src （clang 退出码 $rc）-----"
               cat /tmp/synerr.txt
               FAILED=1
-            fi
-            if [ "$rc" -ne 0 ]; then
-              echo "(clang 退出码 $rc)"
-              FAILED=1
+            else
+              OKCOUNT=$((OKCOUNT + 1))
             fi
           done
+          echo "语法预检：通过 $OKCOUNT 个文件，失败 $FAILED（1 = 有文件报错）"
           if [ "$FAILED" -ne 0 ]; then
             echo "::warning::语法预检发现问题（见上方 file:line:col）。正式编译仍会继续。"
           fi
