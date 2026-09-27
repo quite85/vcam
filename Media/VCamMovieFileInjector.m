@@ -356,10 +356,22 @@ static void vcam_didFinishRecording(id self, SEL _cmd, AVCaptureFileOutput *outp
 
                     // ---- 音频 ----
                     if (r.audioInput.isReadyForMoreMediaData) {
-                        const size_t frames = 1024;
-                        float pcm[frames * 2];
-                        size_t got = [[VCamCore shared] pullPCMInto:pcm maxFrames:frames
-                                                          channels:2 sampleRate:48000];
+                        // ⚠️ 这里必须用**编译期常量**做数组长度。
+                        //    原来写成：
+                        //        const size_t frames = 1024;
+                        //        float pcm[frames * 2];
+                        //    clang 认为 frames 是"常量表达式但有 const 限定"，
+                        //    不接受它作为数组维度，报：
+                        //        error: variable length array folded to constant
+                        //               array as an extension
+                        //               [-Werror,-Wgnu-folding-constant]
+                        //    改用 enum 常量（编译期整型常量）即可。
+                        enum { kShadowAudioFrames = 1024 };
+                        float pcm[kShadowAudioFrames * 2];
+                        size_t got = [[VCamCore shared] pullPCMInto:pcm
+                                                          maxFrames:kShadowAudioFrames
+                                                           channels:2
+                                                         sampleRate:48000];
                         if (got > 0) {
                             [r appendAudioPCM:pcm frames:got channels:2 sampleRate:48000];
                         }
